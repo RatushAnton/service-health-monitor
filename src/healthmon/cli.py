@@ -5,7 +5,12 @@ import sqlite3
 
 from healthmon.config import ConfigError, load_config
 from healthmon.probes import check_dns, check_http, check_tcp
-from healthmon.storage import get_history, get_latest_results, init_db, save_result
+from healthmon.storage import (
+    get_history,
+    get_latest_results,
+    init_db,
+    record_check_with_incident,
+)
 
 CHECKERS = {
     "dns": check_dns,
@@ -31,7 +36,10 @@ def run_checks(config_path: str, db_path: str) -> int:
         return 3
 
     targets = config["targets"]
-    timeout = config["settings"]["timeout_seconds"]
+    settings = config["settings"]
+    timeout = settings["timeout_seconds"]
+    failure_threshold = settings["failure_threshold"]
+    recovery_threshold = settings["recovery_threshold"]
 
     total = len(targets)
     passed = 0
@@ -46,7 +54,12 @@ def run_checks(config_path: str, db_path: str) -> int:
 
         # Persist both healthy and failed results.
         try:
-            save_result(db_path, result)
+            update = record_check_with_incident(
+                db_path,
+                result,
+                failure_threshold,
+                recovery_threshold,
+            )
         except (sqlite3.Error, OSError) as exc:
             print(f"Database write error: {exc}")
             return 3
@@ -66,6 +79,26 @@ def run_checks(config_path: str, db_path: str) -> int:
 
         if not result["success"]:
             print(f"  Reason: {message}")
+
+        if update.event:
+            print(f"  Incident event: {update.event}")
+
+        elif result["success"] and update.state.incident_open:
+            print(
+                "  Recovery pending: "
+                f"{update.state.consecutive_successes}/"
+                f"{recovery_threshold} successful checks"
+            )
+
+        elif not result["success"] and not update.state.incident_open:
+            print(
+                "  Incident pending: "
+                f"{update.state.consecutive_failures}/"
+                f"{failure_threshold} failed checks"
+            )
+
+        elif update.state.incident_open:
+            print("  Incident: OPEN")
 
     print("-" * 70)
     print(f"Total: {total} | Healthy: {passed} | Failed: {failed}")

@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from healthmon.diagnosis import TargetState
+from healthmon.diagnosis import StateUpdate, TargetState, evaluate_check
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS checks (
@@ -225,3 +225,92 @@ def save_target_state(
                 state.incident_started_at,
             ),
         )
+
+
+def record_check_with_incident(
+    db_path: str | Path,
+    result: dict,
+    failure_threshold: int,
+    recovery_threshold: int,
+) -> StateUpdate:
+    """Save a check and its incident state in one transaction."""
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        connection.row_factory = sqlite3.Row
+
+        with connection:
+            # Lock writes before loading the current state.
+            connection.execute("BEGIN IMMEDIATE")
+
+            row = connection.execute(
+                "SELECT * FROM target_state WHERE target_id = ?",
+                (result["target_id"],),
+            ).fetchone()
+
+            if row is None:
+                state = TargetState(target_id=result["target_id"])
+            else:
+                state = TargetState(
+                    target_id=row["target_id"],
+                    consecutive_failures=row["consecutive_failures"],
+                    consecutive_successes=row["consecutive_successes"],
+                    incident_open=bool(row["incident_open"]),
+                    first_failure_at=row["first_failure_at"],
+                    incident_started_at=row["incident_started_at"],
+                )
+
+            # Calculate the incident transition.
+            update = evaluate_check(
+                state,
+                result,
+                failure_threshold,
+                recovery_threshold,
+            )
+
+            # Save the raw probe result.
+            connection.execute(
+                INSERT_RESULT_SQL,
+                (
+                    result["target_id"],
+                    result["check_type"],
+                    result["checked_at"],
+                    int(result["success"]),
+                    result["latency_ms"],
+                    result.get("status_code"),
+                    result.get("error_type"),
+                    result["message"],
+                ),
+            )
+
+            # Save the updated target state.
+            new_state = update.state
+
+            connection.execute(
+                """
+                INSERT INTO target_state (
+                    target_id,
+                    consecutive_failures,
+                    consecutive_successes,
+                    incident_open,
+                    first_failure_at,
+                    incident_started_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(target_id) DO UPDATE SET
+                    consecutive_failures=excluded.consecutive_failures,
+                    consecutive_successes=excluded.consecutive_successes,
+                    incident_open=excluded.incident_open,
+                    first_failure_at=excluded.first_failure_at,
+                    incident_started_at=excluded.incident_started_at
+                """,
+                (
+                    new_state.target_id,
+                    new_state.consecutive_failures,
+                    new_state.consecutive_successes,
+                    int(new_state.incident_open),
+                    new_state.first_failure_at,
+                    new_state.incident_started_at,
+                ),
+            )
+
+    return update
