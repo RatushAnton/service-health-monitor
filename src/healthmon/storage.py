@@ -4,6 +4,7 @@ import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from healthmon.diagnosis import StateUpdate, TargetState, evaluate_check
 
@@ -50,7 +51,9 @@ CREATE TABLE IF NOT EXISTS incident_events (
     delivered_at TEXT,
     delivery_attempts INTEGER NOT NULL DEFAULT 0,
     last_delivery_error TEXT,
-    next_attempt_at TEXT
+    next_attempt_at TEXT,
+    lease_token TEXT,
+    lease_expires_at TEXT
 );
 """
 
@@ -96,6 +99,16 @@ def init_db(db_path: str | Path) -> None:
         if "next_attempt_at" not in columns:
             connection.execute(
                 "ALTER TABLE incident_events ADD COLUMN next_attempt_at TEXT"
+            )
+
+        if "lease_token" not in columns:
+            connection.execute(
+                "ALTER TABLE incident_events ADD COLUMN lease_token TEXT"
+            )
+
+        if "lease_expires_at" not in columns:
+            connection.execute(
+                "ALTER TABLE incident_events ADD COLUMN lease_expires_at TEXT"
             )
 
 
@@ -380,67 +393,81 @@ def record_check_with_incident(
     return update
 
 
-def get_pending_events(
+def claim_pending_event(
     db_path: str | Path,
-    limit: int = 20,
-) -> list[sqlite3.Row]:
-    """Fetch events eligible for delivery, oldest first."""
+    lease_seconds: int = 60,
+) -> dict | None:
+    """Atomically reserve one event for delivery."""
+
+    if lease_seconds < 1:
+        raise ValueError("Lease duration must be positive")
 
     path = Path(db_path)
-
     if not path.is_file():
         raise FileNotFoundError(f"Database not found: {path}")
 
-    now = datetime.now(UTC).isoformat()
-
-    with closing(sqlite3.connect(path)) as connection:
+    with closing(sqlite3.connect(path, timeout=10)) as connection:
         connection.row_factory = sqlite3.Row
 
-        return connection.execute(
-            """
-            SELECT id, target_id, event_type,
-                    occurred_at, incident_started_at,
-                    error_type, message, delivery_attempts
-            FROM incident_events
-            WHERE delivered_at IS NULL
-                AND (
-                    next_attempt_at IS NULL
-                    OR next_attempt_at <= ?
-                )
-            ORDER BY id ASC
-            LIMIT ?
-            """,
-            (now, limit),
-        ).fetchall()
+        with connection:
+            # Only one SQLite writer can claim at a time.
+            connection.execute("BEGIN IMMEDIATE")
+            now = datetime.now(UTC)
 
+            row = connection.execute(
+                """
+                SELECT id, target_id, event_type,
+                        occurred_at, incident_started_at,
+                        error_type, message, delivery_attempts
+                FROM incident_events
+                WHERE delivered_at IS NULL
+                    AND (
+                        next_attempt_at IS NULL
+                        OR next_attempt_at <= ?
+                    )
+                    AND (
+                        lease_expires_at IS NULL
+                        OR lease_expires_at <= ?
+                    )
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (now.isoformat(), now.isoformat()),
+            ).fetchone()
 
-def mark_delivery_attempt(
-    db_path: str | Path,
-    event_id: int,
-) -> None:
-    """Increment the delivery-attempt counter."""
+            if row is None:
+                return None
 
-    with closing(sqlite3.connect(db_path)) as connection, connection:
-        cursor = connection.execute(
-            """
-            UPDATE incident_events
-            SET delivery_attempts = delivery_attempts + 1
-            WHERE id = ? AND delivered_at IS NULL
-            """,
-            (event_id,),
-        )
+            token = uuid4().hex
+            expires_at = (now + timedelta(seconds=lease_seconds)).isoformat()
 
-        if cursor.rowcount != 1:
-            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")
+            cursor = connection.execute(
+                """
+                UPDATE incident_events
+                SET lease_token = ?,
+                    lease_expires_at = ?,
+                    delivery_attempts = delivery_attempts + 1
+                WHERE id = ? AND delivered_at IS NULL
+                """,
+                (token, expires_at, row["id"]),
+            )
+
+            if cursor.rowcount != 1:
+                raise sqlite3.DatabaseError("Could not claim incident event")
+
+    event = dict(row)
+    event["lease_token"] = token
+    event["delivery_attempts"] += 1
+
+    return event
 
 
 def mark_event_delivered(
     db_path: str | Path,
     event_id: int,
+    lease_token: str,
 ) -> None:
-    """Record successful webhook delivery."""
-
-    from datetime import UTC, datetime
+    """Complete delivery only for the current lease owner."""
 
     delivered_at = datetime.now(UTC).isoformat()
 
@@ -450,23 +477,28 @@ def mark_event_delivered(
             UPDATE incident_events
             SET delivered_at = ?,
                 last_delivery_error = NULL,
-                next_attempt_at = NULL
-            WHERE id = ? AND delivered_at IS NULL
+                next_attempt_at = NULL,
+                lease_token = NULL,
+                lease_expires_at = NULL
+            WHERE id = ?
+                AND lease_token = ?
+                AND delivered_at IS NULL
             """,
-            (delivered_at, event_id),
+            (delivered_at, event_id, lease_token),
         )
 
         if cursor.rowcount != 1:
-            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")
+            raise sqlite3.DatabaseError(f"Event {event_id}: lease no longer owned")
 
 
 def mark_delivery_failed(
     db_path: str | Path,
     event_id: int,
+    lease_token: str,
     error: str,
     delay_seconds: int,
 ) -> None:
-    """Save a delivery error and schedule its next attempt."""
+    """Release a failed event and schedule its retry."""
 
     if delay_seconds < 1:
         raise ValueError("Retry delay must be positive")
@@ -478,11 +510,15 @@ def mark_delivery_failed(
             """
             UPDATE incident_events
             SET last_delivery_error = ?,
-                next_attempt_at = ?
-            WHERE id = ? AND delivered_at IS NULL
+                next_attempt_at = ?,
+                lease_token = NULL,
+                lease_expires_at = NULL
+            WHERE id = ?
+                AND lease_token = ?
+                AND delivered_at IS NULL
             """,
-            (error[:500], next_attempt_at, event_id),
+            (error[:500], next_attempt_at, event_id, lease_token),
         )
 
         if cursor.rowcount != 1:
-            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")
+            raise sqlite3.DatabaseError(f"Event {event_id}: lease no longer owned")

@@ -1,5 +1,3 @@
-"""Incident notification helpers (planned)."""
-
 """Send incident notifications to HTTP webhook endpoints."""
 
 import httpx

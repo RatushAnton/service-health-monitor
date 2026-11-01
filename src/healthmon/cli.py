@@ -10,11 +10,10 @@ from healthmon.alerting import send_webhook
 from healthmon.config import ConfigError, load_config
 from healthmon.probes import check_dns, check_http, check_tcp
 from healthmon.storage import (
+    claim_pending_event,
     get_history,
     get_latest_results,
-    get_pending_events,
     init_db,
-    mark_delivery_attempt,
     mark_delivery_failed,
     mark_event_delivered,
     record_check_with_incident,
@@ -191,7 +190,7 @@ def send_notifications(
     webhook_url: str,
     limit: int,
 ) -> int:
-    """Deliver eligible events and schedule failed retries."""
+    """Claim and deliver queued notifications safely."""
 
     if limit < 1:
         print("Notification limit must be positive")
@@ -205,42 +204,44 @@ def send_notifications(
         if not Path(db_path).is_file():
             raise FileNotFoundError(f"Database not found: {db_path}")
 
-        # Apply schema upgrades before reading the queue.
         init_db(db_path)
-        events = get_pending_events(db_path, limit)
     except (sqlite3.Error, OSError) as exc:
-        print(f"Database read error: {exc}")
+        print(f"Database initialization error: {exc}")
         return 3
-
-    if not events:
-        print("No incident notifications ready for delivery")
-        return 0
 
     delivered = 0
 
-    for row in events:
-        event = dict(row)
-        event_id = event["id"]
-
+    for _ in range(limit):
         try:
-            mark_delivery_attempt(db_path, event_id)
+            event = claim_pending_event(
+                db_path,
+                lease_seconds=60,
+            )
         except (sqlite3.Error, OSError) as exc:
-            print(f"Database write error: {exc}")
+            print(f"Database claim error: {exc}")
             return 3
+
+        if event is None:
+            break
+
+        event_id = event["id"]
+        token = event["lease_token"]
 
         try:
             send_webhook(webhook_url, event)
 
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
-            attempt = event["delivery_attempts"] + 1
-
-            # Double the delay after each failure, up to one hour.
-            delay = min(60 * (2 ** min(attempt - 1, 6)), 3600)
+            attempt = event["delivery_attempts"]
+            delay = min(
+                60 * (2 ** min(attempt - 1, 6)),
+                3600,
+            )
 
             try:
                 mark_delivery_failed(
                     db_path,
                     event_id,
+                    token,
                     str(exc),
                     delay,
                 )
@@ -255,7 +256,11 @@ def send_notifications(
             return 4
 
         try:
-            mark_event_delivered(db_path, event_id)
+            mark_event_delivered(
+                db_path,
+                event_id,
+                token,
+            )
         except (sqlite3.Error, OSError) as exc:
             print(f"Database write error: {exc}")
             return 3
@@ -263,7 +268,11 @@ def send_notifications(
         delivered += 1
         print(f"Delivered event {event_id}: {event['target_id']} {event['event_type']}")
 
-    print(f"Notifications delivered: {delivered}")
+    if delivered == 0:
+        print("No incident notifications ready for delivery")
+    else:
+        print(f"Notifications delivered: {delivered}")
+
     return 0
 
 
