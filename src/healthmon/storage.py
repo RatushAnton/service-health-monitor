@@ -360,3 +360,75 @@ def record_check_with_incident(
                 )
 
     return update
+
+
+def get_pending_events(
+    db_path: str | Path,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    """Fetch undelivered incident events, oldest first."""
+
+    path = Path(db_path)
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Database not found: {path}")
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.row_factory = sqlite3.Row
+
+        return connection.execute(
+            """
+            SELECT id, target_id, event_type,
+                    occurred_at, incident_started_at,
+                    error_type, message, delivery_attempts
+            FROM incident_events
+            WHERE delivered_at IS NULL
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+
+def mark_delivery_attempt(
+    db_path: str | Path,
+    event_id: int,
+) -> None:
+    """Increment the delivery-attempt counter."""
+
+    with closing(sqlite3.connect(db_path)) as connection, connection:
+        cursor = connection.execute(
+            """
+            UPDATE incident_events
+            SET delivery_attempts = delivery_attempts + 1
+            WHERE id = ? AND delivered_at IS NULL
+            """,
+            (event_id,),
+        )
+
+        if cursor.rowcount != 1:
+            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")
+
+
+def mark_event_delivered(
+    db_path: str | Path,
+    event_id: int,
+) -> None:
+    """Record successful webhook delivery."""
+
+    from datetime import UTC, datetime
+
+    delivered_at = datetime.now(UTC).isoformat()
+
+    with closing(sqlite3.connect(db_path)) as connection, connection:
+        cursor = connection.execute(
+            """
+            UPDATE incident_events
+            SET delivered_at = ?
+            WHERE id = ? AND delivered_at IS NULL
+            """,
+            (delivered_at, event_id),
+        )
+
+        if cursor.rowcount != 1:
+            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")

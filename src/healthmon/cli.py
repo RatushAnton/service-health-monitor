@@ -3,12 +3,18 @@
 import argparse
 import sqlite3
 
+import httpx
+
+from healthmon.alerting import send_webhook
 from healthmon.config import ConfigError, load_config
 from healthmon.probes import check_dns, check_http, check_tcp
 from healthmon.storage import (
     get_history,
     get_latest_results,
+    get_pending_events,
     init_db,
+    mark_delivery_attempt,
+    mark_event_delivered,
     record_check_with_incident,
 )
 
@@ -178,6 +184,62 @@ def show_history(
     return 0
 
 
+def send_notifications(
+    db_path: str,
+    webhook_url: str,
+    limit: int,
+) -> int:
+    """Deliver queued incident events to a webhook."""
+
+    if limit < 1:
+        print("Notification limit must be positive")
+        return 2
+
+    if not webhook_url.startswith(("http://", "https://")):
+        print("Webhook URL must use HTTP or HTTPS")
+        return 2
+
+    try:
+        events = get_pending_events(db_path, limit)
+    except (sqlite3.Error, OSError) as exc:
+        print(f"Database read error: {exc}")
+        return 3
+
+    if not events:
+        print("No pending incident notifications")
+        return 0
+
+    delivered = 0
+
+    for row in events:
+        event = dict(row)
+        event_id = event["id"]
+
+        try:
+            mark_delivery_attempt(db_path, event_id)
+        except (sqlite3.Error, OSError) as exc:
+            print(f"Database write error: {exc}")
+            return 3
+
+        try:
+            send_webhook(webhook_url, event)
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            print(f"Webhook delivery failed for event {event_id}: {exc}")
+            return 4
+
+        try:
+            mark_event_delivered(db_path, event_id)
+        except (sqlite3.Error, OSError) as exc:
+            print(f"Database write error: {exc}")
+            return 3
+
+        delivered += 1
+        print(f"Delivered event {event_id}: {event['target_id']} {event['event_type']}")
+
+    print(f"Notifications delivered: {delivered}")
+    return 0
+
+
 def main() -> int:
     """Parse CLI arguments and run the selected command."""
 
@@ -242,6 +304,30 @@ def main() -> int:
         help="Path to the SQLite database",
     )
 
+    notify_parser = subparsers.add_parser(
+        "notify",
+        help="Send pending incident events to a webhook",
+    )
+
+    notify_parser.add_argument(
+        "--db",
+        default="data/health.db",
+        help="Path to the SQLite database",
+    )
+
+    notify_parser.add_argument(
+        "--webhook-url",
+        required=True,
+        help="HTTP endpoint to receive incident notifications",
+    )
+
+    notify_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of events to deliver",
+    )
+
     args = parser.parse_args()
 
     if args.command == "check":
@@ -257,4 +343,10 @@ def main() -> int:
             args.limit,
         )
 
+    if args.command == "notify":
+        return send_notifications(
+            args.db,
+            args.webhook_url,
+            args.limit,
+        )
     return 2
