@@ -1,4 +1,3 @@
-
 # Service Health Monitor
 
 A lightweight Python CLI for monitoring network connectivity and service
@@ -6,11 +5,11 @@ availability through DNS, TCP, and HTTP/HTTPS checks.
 
 Built as a hands-on DevOps and infrastructure engineering portfolio project.
 
-**Current milestone: Phase 4A completed (incident state machine).**
+**Current milestone: Phase 5 completed (reliable webhook alerting).**
 
-The monitoring CLI and SQLite history are functional. Incident detection
-logic has been implemented independently but is not yet connected to the
-CLI or database.
+The CLI supports persistent monitoring, incident detection,
+historical reporting, and queued webhook notifications with retry
+scheduling and lease-based worker coordination.
 
 ## Features
 
@@ -22,7 +21,11 @@ CLI or database.
 - Failure classification and error messages
 - SQLite persistence for successful and failed checks
 - CLI commands to check services and inspect historical results
-- In-memory incident state machine with configurable thresholds
+- Persistent incident detection with configurable thresholds
+- Durable DOWN and RECOVERED incident events
+- Webhook notification delivery
+- Exponential retry backoff and delivery diagnostics
+- Atomic event claims and time-limited worker leases
 
 ### Monitoring layers
 
@@ -116,6 +119,26 @@ healthmon history --target local_demo --limit 20
 
 Both healthy and failed checks are retained.
 
+### Deliver incident notifications
+
+Set the URL of a compatible webhook receiver:
+
+```bash
+export HEALTHMON_WEBHOOK_URL="https://your-webhook.example/notify"
+```
+
+Deliver queued events:
+
+```bash
+healthmon notify --db data/health.db --webhook-url "$HEALTHMON_WEBHOOK_URL"
+```
+
+The receiver must accept the application's JSON event format.
+Successful deliveries are recorded in SQLite. Failed requests
+are retried when their backoff delay expires.
+
+Use HTTPS for remote receivers and keep credentials out of Git.
+
 ### CLI exit codes
 
 | Code | Meaning |
@@ -124,6 +147,7 @@ Both healthy and failed checks are retained.
 | 1 | At least one live health check failed |
 | 2 | Configuration or argument error |
 | 3 | Database error |
+| 4 | Webhook delivery error |
 
 Reporting commands may return exit code 0 even when historical results
 include failed services.
@@ -162,9 +186,8 @@ targets:
 
 DNS targets can optionally specify a resolver IP address.
 
-The failure and recovery thresholds are currently validated by the
-configuration loader. Their incident-detection behavior is implemented
-in `diagnosis.py` but is not yet used by the CLI.
+Failure and recovery thresholds are applied during each
+`healthmon check` execution. Incident state persists between runs.
 
 ## Local test service
 
@@ -221,10 +244,10 @@ service-health-monitor/
 | `cli.py` | Parse commands, execute probes, and display results |
 | `config.py` | Load and validate YAML configuration |
 | `probes.py` | Perform DNS, TCP, and HTTP checks |
-| `storage.py` | Initialize SQLite and save/query health results |
+| `storage.py` | Store checks, incident states, events, and delivery records |
 | `diagnosis.py` | Evaluate incident and recovery transitions |
 | `models.py` | Placeholder for shared models |
-| `alerting.py` | Placeholder for notifications |
+| `alerting.py` | Send incident events to HTTP webhook endpoints |
 
 ## Incident detection
 
@@ -240,10 +263,49 @@ With `failure_threshold: 3` and `recovery_threshold: 1`:
 
 A separate test also verified recovery after two consecutive successes.
 
-**Current limitation:** Incident state exists only in Python memory.
-It is not persisted between CLI executions.
+Incident state and events are persisted in SQLite. Notifications
+are delivered separately through `healthmon notify`.
+
+## Notification reliability
+
+Incident transitions are saved in SQLite in the same transaction
+as the associated health-check result and updated target state.
+
+The notification queue uses atomic event claims and unique lease
+tokens to coordinate competing workers. Leases last 60 seconds.
+
+Failed deliveries use exponential backoff:
+
+| Failure | Retry delay |
+|---|---|
+| 1 | 60 seconds |
+| 2 | 120 seconds |
+| 3 | 240 seconds |
+| 4 | 480 seconds |
+| 5 | 960 seconds |
+| 6 | 1920 seconds |
+| 7+ | 3600 seconds (maximum) |
+
+Successful delivery clears retry metadata and records a timestamp.
+Failed delivery retains the event for another attempt.
+
+Delivery is **at-least-once**, not exactly-once. If a worker crashes
+after the receiver accepts an event but before SQLite records success,
+a later worker may send the same event again. Receivers should use
+event IDs for deduplication where supported.
+
+### Verified end-to-end demonstration
+
+A local outage and recovery test verified:
+
+- Three consecutive failures opening one DOWN incident
+- Notification delivery after an initial webhook failure
+- A successful check closing the incident
+- One RECOVERED notification
+- Four recorded checks, two events, and zero open incidents
 
 ## Development
+
 
 Run linting:
 
@@ -276,9 +338,9 @@ Automated pytest tests and GitHub Actions CI are planned.
 | 2 | DNS, TCP, HTTP probes, and CLI | Complete |
 | 3 | SQLite persistence, summary, and history | Complete |
 | 4A | In-memory incident detection | Complete |
-| 4B | Persistent incident state | Planned |
-| 4C | Incident integration with CLI | Planned |
-| 5 | Notifications and recovery alerts | Planned |
+| 4B | Persistent incident state | Complete |
+| 4C | Incident integration with CLI | Complete |
+| 5 | Notifications and recovery alerts | Complete |
 | 6 | Automated tests and GitHub Actions | Planned |
 | 7 | Raspberry Pi deployment with systemd | Planned |
 | 8 | End-to-end outage demo and documentation | Planned |
@@ -286,9 +348,9 @@ Automated pytest tests and GitHub Actions CI are planned.
 ## Known limitations
 
 - Checks currently run only when manually invoked.
-- Incident thresholds are not yet integrated into the CLI.
-- Incident state does not survive process restarts.
-- No notifications or recovery alerts are sent.
+- Notifications require a separate `healthmon notify` execution.
+- Webhook delivery is at-least-once, not exactly-once.
+- Expired leases can allow redelivery after worker crashes.
 - No automatic scheduling or Raspberry Pi deployment is configured.
 - Historical UP status may be stale.
 - Network errors do not always identify the underlying root cause.
