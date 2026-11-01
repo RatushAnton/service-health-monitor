@@ -1,10 +1,9 @@
+import socket
 import time
 from datetime import UTC, datetime
 
 import dns.exception
 import dns.resolver
-
-import socket
 
 
 def check_dns(target: dict, timeout_seconds: float) -> dict:
