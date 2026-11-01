@@ -1,0 +1,36 @@
+
+settings:
+  timeout_seconds: 3
+  failure_threshold: 3
+  recovery_threshold: 1
+
+targets:
+  - id: internet_tcp
+    name: Internet Connectivity
+    type: tcp
+    host: 1.1.1.1
+    port: 443
+
+  - id: dns_resolution
+    name: DNS Resolution
+    type: dns
+    host: example.com
+    record_type: A
+
+  - id: example_web
+    name: Example Website
+    type: http
+    url: https://example.com/
+    expected_status: 200
+
+  - id: github_web
+    name: GitHub
+    type: http
+    url: https://github.com/
+    expected_status: 200
+
+  - id: local_demo
+    name: Local Test Application
+    type: http
+    url: http://127.0.0.1:8765/
+    expected_status: 200

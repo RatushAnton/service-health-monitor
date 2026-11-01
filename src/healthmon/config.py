@@ -1,7 +1,6 @@
-
+import ipaddress
 from pathlib import Path
 from urllib.parse import urlsplit
-import ipaddress
 
 import yaml
 
@@ -15,9 +14,7 @@ def require_text(target: dict, field: str, label: str) -> str:
     value = target.get(field)
 
     if not isinstance(value, str) or not value.strip():
-        raise ConfigError(
-            f"{label}: '{field}' must be a nonempty string"
-        )
+        raise ConfigError(f"{label}: '{field}' must be a nonempty string")
 
     return value
 
@@ -31,13 +28,9 @@ def load_config(path: str | Path) -> dict:
         with config_path.open("r", encoding="utf-8") as file:
             config = yaml.safe_load(file)
     except OSError as exc:
-        raise ConfigError(
-            f"Cannot read configuration: {exc}"
-        ) from exc
+        raise ConfigError(f"Cannot read configuration: {exc}") from exc
     except yaml.YAMLError as exc:
-        raise ConfigError(
-            f"Invalid YAML syntax: {exc}"
-        ) from exc
+        raise ConfigError(f"Invalid YAML syntax: {exc}") from exc
 
     if not isinstance(config, dict):
         raise ConfigError("Configuration must be a YAML mapping")
@@ -55,17 +48,13 @@ def load_config(path: str | Path) -> dict:
         or not isinstance(timeout, (int, float))
         or not 0 < timeout <= 60
     ):
-        raise ConfigError(
-            "'timeout_seconds' must be between 0 and 60"
-        )
+        raise ConfigError("'timeout_seconds' must be between 0 and 60")
 
     for key in ("failure_threshold", "recovery_threshold"):
         value = settings.get(key)
 
         if type(value) is not int or value < 1:
-            raise ConfigError(
-                f"'{key}' must be a positive integer"
-            )
+            raise ConfigError(f"'{key}' must be a positive integer")
 
     # Validate target list
     targets = config.get("targets")
@@ -77,18 +66,14 @@ def load_config(path: str | Path) -> dict:
 
     for index, target in enumerate(targets, start=1):
         if not isinstance(target, dict):
-            raise ConfigError(
-                f"Target #{index} must be a mapping"
-            )
+            raise ConfigError(f"Target #{index} must be a mapping")
 
         label = f"Target #{index}"
         target_id = require_text(target, "id", label)
         require_text(target, "name", target_id)
 
         if target_id in seen_ids:
-            raise ConfigError(
-                f"Duplicate target ID: {target_id}"
-            )
+            raise ConfigError(f"Duplicate target ID: {target_id}")
 
         seen_ids.add(target_id)
 
@@ -99,54 +84,39 @@ def load_config(path: str | Path) -> dict:
 
             record_type = target.get("record_type", "A")
             if record_type not in ("A", "AAAA"):
-                raise ConfigError(
-                    f"{target_id}: unsupported DNS record type"
-                )
+                raise ConfigError(f"{target_id}: unsupported DNS record type")
 
             nameserver = target.get("resolver", "system")
             if nameserver != "system":
                 try:
                     ipaddress.ip_address(nameserver)
                 except (ValueError, TypeError):
-                    raise ConfigError(
-                        f"{target_id}: resolver must be an IP"
-                    ) from None
+                    raise ConfigError(f"{target_id}: resolver must be an IP") from None
 
         elif kind == "tcp":
             require_text(target, "host", target_id)
 
             port = target.get("port")
             if type(port) is not int or not 1 <= port <= 65535:
-                raise ConfigError(
-                    f"{target_id}: invalid TCP port"
-                )
+                raise ConfigError(f"{target_id}: invalid TCP port")
 
         elif kind == "http":
             url = require_text(target, "url", target_id)
 
             try:
                 parsed = urlsplit(url)
-                valid_url = (
-                    parsed.scheme in ("http", "https")
-                    and bool(parsed.hostname)
-                )
+                valid_url = parsed.scheme in ("http", "https") and bool(parsed.hostname)
             except ValueError:
                 valid_url = False
 
             if not valid_url:
-                raise ConfigError(
-                    f"{target_id}: invalid HTTP URL"
-                )
+                raise ConfigError(f"{target_id}: invalid HTTP URL")
 
             status = target.get("expected_status", 200)
             if type(status) is not int or not 100 <= status <= 599:
-                raise ConfigError(
-                    f"{target_id}: invalid HTTP status"
-                )
+                raise ConfigError(f"{target_id}: invalid HTTP status")
 
         else:
-            raise ConfigError(
-                f"{target_id}: unsupported check type '{kind}'"
-            )
+            raise ConfigError(f"{target_id}: unsupported check type '{kind}'")
 
     return config

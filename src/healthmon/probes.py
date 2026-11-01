@@ -1,6 +1,5 @@
-
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import dns.exception
 import dns.resolver
@@ -9,7 +8,7 @@ import dns.resolver
 def check_dns(target: dict, timeout_seconds: float) -> dict:
     """Check DNS resolution and return a structured result."""
 
-    checked_at = datetime.now(timezone.utc).isoformat()
+    checked_at = datetime.now(UTC).isoformat()
     start = time.perf_counter()
 
     success = False

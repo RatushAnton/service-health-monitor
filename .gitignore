@@ -16,3 +16,6 @@ data/
 .env.*
 !.env.example
 config.local.yaml
+
+# Local monitoring configuration
+config/targets.yaml
