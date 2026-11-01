@@ -2,6 +2,7 @@
 
 import argparse
 import sqlite3
+from pathlib import Path
 
 import httpx
 
@@ -14,6 +15,7 @@ from healthmon.storage import (
     get_pending_events,
     init_db,
     mark_delivery_attempt,
+    mark_delivery_failed,
     mark_event_delivered,
     record_check_with_incident,
 )
@@ -189,7 +191,7 @@ def send_notifications(
     webhook_url: str,
     limit: int,
 ) -> int:
-    """Deliver queued incident events to a webhook."""
+    """Deliver eligible events and schedule failed retries."""
 
     if limit < 1:
         print("Notification limit must be positive")
@@ -200,13 +202,18 @@ def send_notifications(
         return 2
 
     try:
+        if not Path(db_path).is_file():
+            raise FileNotFoundError(f"Database not found: {db_path}")
+
+        # Apply schema upgrades before reading the queue.
+        init_db(db_path)
         events = get_pending_events(db_path, limit)
     except (sqlite3.Error, OSError) as exc:
         print(f"Database read error: {exc}")
         return 3
 
     if not events:
-        print("No pending incident notifications")
+        print("No incident notifications ready for delivery")
         return 0
 
     delivered = 0
@@ -223,8 +230,28 @@ def send_notifications(
 
         try:
             send_webhook(webhook_url, event)
+
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
-            print(f"Webhook delivery failed for event {event_id}: {exc}")
+            attempt = event["delivery_attempts"] + 1
+
+            # Double the delay after each failure, up to one hour.
+            delay = min(60 * (2 ** min(attempt - 1, 6)), 3600)
+
+            try:
+                mark_delivery_failed(
+                    db_path,
+                    event_id,
+                    str(exc),
+                    delay,
+                )
+            except (sqlite3.Error, OSError) as db_exc:
+                print(f"Database write error: {db_exc}")
+                return 3
+
+            print(f"Webhook delivery failed: event {event_id}")
+            print(f"  Reason: {exc}")
+            print(f"  Attempt: {attempt}")
+            print(f"  Next retry in: {delay} seconds")
             return 4
 
         try:

@@ -2,6 +2,7 @@
 
 import sqlite3
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from healthmon.diagnosis import StateUpdate, TargetState, evaluate_check
@@ -47,7 +48,9 @@ CREATE TABLE IF NOT EXISTS incident_events (
     error_type TEXT,
     message TEXT NOT NULL,
     delivered_at TEXT,
-    delivery_attempts INTEGER NOT NULL DEFAULT 0
+    delivery_attempts INTEGER NOT NULL DEFAULT 0,
+    last_delivery_error TEXT,
+    next_attempt_at TEXT
 );
 """
 
@@ -79,6 +82,21 @@ def init_db(db_path: str | Path) -> None:
         connection.execute(CREATE_INDEX_SQL)
         connection.execute(CREATE_TARGET_STATE_SQL)
         connection.execute(CREATE_INCIDENT_EVENTS_SQL)
+
+        # Upgrade databases created before retry scheduling existed.
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(incident_events)")
+        }
+
+        if "last_delivery_error" not in columns:
+            connection.execute(
+                "ALTER TABLE incident_events ADD COLUMN last_delivery_error TEXT"
+            )
+
+        if "next_attempt_at" not in columns:
+            connection.execute(
+                "ALTER TABLE incident_events ADD COLUMN next_attempt_at TEXT"
+            )
 
 
 def save_result(db_path: str | Path, result: dict) -> None:
@@ -366,12 +384,14 @@ def get_pending_events(
     db_path: str | Path,
     limit: int = 20,
 ) -> list[sqlite3.Row]:
-    """Fetch undelivered incident events, oldest first."""
+    """Fetch events eligible for delivery, oldest first."""
 
     path = Path(db_path)
 
     if not path.is_file():
         raise FileNotFoundError(f"Database not found: {path}")
+
+    now = datetime.now(UTC).isoformat()
 
     with closing(sqlite3.connect(path)) as connection:
         connection.row_factory = sqlite3.Row
@@ -383,10 +403,14 @@ def get_pending_events(
                     error_type, message, delivery_attempts
             FROM incident_events
             WHERE delivered_at IS NULL
+                AND (
+                    next_attempt_at IS NULL
+                    OR next_attempt_at <= ?
+                )
             ORDER BY id ASC
             LIMIT ?
             """,
-            (limit,),
+            (now, limit),
         ).fetchall()
 
 
@@ -424,10 +448,40 @@ def mark_event_delivered(
         cursor = connection.execute(
             """
             UPDATE incident_events
-            SET delivered_at = ?
+            SET delivered_at = ?,
+                last_delivery_error = NULL,
+                next_attempt_at = NULL
             WHERE id = ? AND delivered_at IS NULL
             """,
             (delivered_at, event_id),
+        )
+
+        if cursor.rowcount != 1:
+            raise sqlite3.DatabaseError(f"Event {event_id} is not pending")
+
+
+def mark_delivery_failed(
+    db_path: str | Path,
+    event_id: int,
+    error: str,
+    delay_seconds: int,
+) -> None:
+    """Save a delivery error and schedule its next attempt."""
+
+    if delay_seconds < 1:
+        raise ValueError("Retry delay must be positive")
+
+    next_attempt_at = (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()
+
+    with closing(sqlite3.connect(db_path)) as connection, connection:
+        cursor = connection.execute(
+            """
+            UPDATE incident_events
+            SET last_delivery_error = ?,
+                next_attempt_at = ?
+            WHERE id = ? AND delivered_at IS NULL
+            """,
+            (error[:500], next_attempt_at, event_id),
         )
 
         if cursor.rowcount != 1:
