@@ -1,3 +1,5 @@
+"""DNS, TCP, and HTTP health checks."""
+
 import socket
 import time
 from datetime import UTC, datetime
@@ -8,7 +10,7 @@ import httpx
 
 
 def check_dns(target: dict, timeout_seconds: float) -> dict:
-    """Check DNS resolution and return a structured result."""
+    """Resolve DNS records and report latency or errors."""
 
     checked_at = datetime.now(UTC).isoformat()
     start = time.perf_counter()
@@ -82,7 +84,7 @@ def check_dns(target: dict, timeout_seconds: float) -> dict:
 
 
 def check_tcp(target: dict, timeout_seconds: float) -> dict:
-    """Check TCP connectivity to a host and port."""
+    """Test a TCP connection and report its result."""
 
     host = target["host"]
     port = target["port"]
@@ -133,7 +135,7 @@ def check_tcp(target: dict, timeout_seconds: float) -> dict:
 
 
 def check_http(target: dict, timeout_seconds: float) -> dict:
-    """Check an HTTP endpoint and verify its status code."""
+    """Request a URL and validate its HTTP status code."""
 
     url = target["url"]
     expected_status = target.get("expected_status", 200)

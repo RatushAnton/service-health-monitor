@@ -1,3 +1,5 @@
+"""CLI commands for checking services and viewing saved results."""
+
 import argparse
 import sqlite3
 
@@ -13,7 +15,7 @@ CHECKERS = {
 
 
 def run_checks(config_path: str, db_path: str) -> int:
-    """Run health checks, store results, and show a summary."""
+    """Run all probes, save results, and print their status."""
 
     try:
         config = load_config(config_path)
@@ -73,7 +75,7 @@ def run_checks(config_path: str, db_path: str) -> int:
 
 
 def show_summary(db_path: str) -> int:
-    """Display the last recorded state of every target."""
+    """Print the latest saved result for each target."""
 
     try:
         rows = get_latest_results(db_path)
@@ -110,7 +112,7 @@ def show_history(
     target_id: str,
     limit: int,
 ) -> int:
-    """Display historical checks for a single target."""
+    """Print recent saved checks for one target."""
 
     if limit < 1:
         print("History limit must be a positive integer")
@@ -144,7 +146,7 @@ def show_history(
 
 
 def main() -> int:
-    """Application entry point."""
+    """Parse CLI arguments and run the selected command."""
 
     parser = argparse.ArgumentParser(
         description="Home Network and Service Health Monitor"
