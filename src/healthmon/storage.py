@@ -66,3 +66,74 @@ def save_result(db_path: str | Path, result: dict) -> None:
                 result["message"],
             ),
         )
+
+
+def get_latest_results(db_path: str | Path) -> list[sqlite3.Row]:
+    """Return the most recent recorded check for each target."""
+
+    path = Path(db_path)
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Database not found: {path}")
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.row_factory = sqlite3.Row
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                target_id,
+                check_type,
+                checked_at,
+                success,
+                latency_ms,
+                error_type,
+                message
+            FROM checks
+            WHERE id IN (
+                SELECT MAX(id)
+                FROM checks
+                GROUP BY target_id
+            )
+            ORDER BY target_id
+            """
+        ).fetchall()
+
+    return rows
+
+
+def get_history(
+    db_path: str | Path,
+    target_id: str,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    """Return recent check history for one target."""
+
+    path = Path(db_path)
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Database not found: {path}")
+
+    with closing(sqlite3.connect(path)) as connection:
+        connection.row_factory = sqlite3.Row
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                target_id,
+                checked_at,
+                success,
+                latency_ms,
+                error_type,
+                message
+            FROM checks
+            WHERE target_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (target_id, limit),
+        ).fetchall()
+
+    return rows

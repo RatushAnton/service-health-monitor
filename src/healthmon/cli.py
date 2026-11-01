@@ -3,7 +3,7 @@ import sqlite3
 
 from healthmon.config import ConfigError, load_config
 from healthmon.probes import check_dns, check_http, check_tcp
-from healthmon.storage import init_db, save_result
+from healthmon.storage import get_history, get_latest_results, init_db, save_result
 
 CHECKERS = {
     "dns": check_dns,
@@ -72,6 +72,77 @@ def run_checks(config_path: str, db_path: str) -> int:
     return 1 if failed else 0
 
 
+def show_summary(db_path: str) -> int:
+    """Display the last recorded state of every target."""
+
+    try:
+        rows = get_latest_results(db_path)
+    except (sqlite3.Error, OSError) as exc:
+        print(f"Database read error: {exc}")
+        return 3
+
+    if not rows:
+        print("No monitoring results recorded yet.")
+        return 0
+
+    print("\nLast Recorded Service Health")
+    print("-" * 85)
+
+    for row in rows:
+        status = "UP" if row["success"] else "DOWN"
+
+        print(
+            f"{row['target_id']:<22} "
+            f"{status:<6} "
+            f"{row['latency_ms']:>9.2f} ms  "
+            f"{row['checked_at']}"
+        )
+
+    print("-" * 85)
+    print(f"Targets with recorded results: {len(rows)}")
+    print()
+
+    return 0
+
+
+def show_history(
+    db_path: str,
+    target_id: str,
+    limit: int,
+) -> int:
+    """Display historical checks for a single target."""
+
+    if limit < 1:
+        print("History limit must be a positive integer")
+        return 2
+
+    try:
+        rows = get_history(db_path, target_id, limit)
+    except (sqlite3.Error, OSError) as exc:
+        print(f"Database read error: {exc}")
+        return 3
+
+    if not rows:
+        print(f"No history found for target: {target_id}")
+        return 0
+
+    print(f"\nCheck history: {target_id}")
+    print("-" * 70)
+
+    for row in rows:
+        status = "UP" if row["success"] else "DOWN"
+
+        print(f"{row['checked_at']}  {status:<6} {row['latency_ms']:>9.2f} ms")
+
+        if not row["success"]:
+            print(f"  {row['error_type']}: {row['message']}")
+
+    print("-" * 70)
+    print(f"Showing {len(rows)} recorded checks\n")
+
+    return 0
+
+
 def main() -> int:
     """Application entry point."""
 
@@ -101,9 +172,54 @@ def main() -> int:
         help="Path to the SQLite database",
     )
 
+    summary_parser = subparsers.add_parser(
+        "summary",
+        help="Show the last recorded state of each target",
+    )
+
+    summary_parser.add_argument(
+        "--db",
+        default="data/health.db",
+        help="Path to the SQLite database",
+    )
+
+    history_parser = subparsers.add_parser(
+        "history",
+        help="Show historical checks for one target",
+    )
+
+    history_parser.add_argument(
+        "--target",
+        required=True,
+        help="Target ID to display",
+    )
+
+    history_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of records to show",
+    )
+
+    history_parser.add_argument(
+        "--db",
+        default="data/health.db",
+        help="Path to the SQLite database",
+    )
+
     args = parser.parse_args()
 
     if args.command == "check":
         return run_checks(args.config, args.db)
+
+    if args.command == "summary":
+        return show_summary(args.db)
+
+    if args.command == "history":
+        return show_history(
+            args.db,
+            args.target,
+            args.limit,
+        )
 
     return 2
