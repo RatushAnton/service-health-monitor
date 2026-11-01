@@ -36,6 +36,21 @@ CREATE TABLE IF NOT EXISTS target_state (
 );
 """
 
+CREATE_INCIDENT_EVENTS_SQL = """
+CREATE TABLE IF NOT EXISTS incident_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id TEXT NOT NULL,
+    event_type TEXT NOT NULL
+        CHECK (event_type IN ('DOWN', 'RECOVERED')),
+    occurred_at TEXT NOT NULL,
+    incident_started_at TEXT,
+    error_type TEXT,
+    message TEXT NOT NULL,
+    delivered_at TEXT,
+    delivery_attempts INTEGER NOT NULL DEFAULT 0
+);
+"""
+
 INSERT_RESULT_SQL = """
 INSERT INTO checks (
     target_id,
@@ -63,6 +78,7 @@ def init_db(db_path: str | Path) -> None:
         connection.execute(CREATE_TABLE_SQL)
         connection.execute(CREATE_INDEX_SQL)
         connection.execute(CREATE_TARGET_STATE_SQL)
+        connection.execute(CREATE_INCIDENT_EVENTS_SQL)
 
 
 def save_result(db_path: str | Path, result: dict) -> None:
@@ -312,5 +328,35 @@ def record_check_with_incident(
                     new_state.incident_started_at,
                 ),
             )
+
+            # Store only actual incident transitions.
+            if update.event is not None:
+                incident_started_at = (
+                    new_state.incident_started_at
+                    if update.event == "DOWN"
+                    else state.incident_started_at
+                )
+
+                connection.execute(
+                    """
+                    INSERT INTO incident_events (
+                        target_id,
+                        event_type,
+                        occurred_at,
+                        incident_started_at,
+                        error_type,
+                        message
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result["target_id"],
+                        update.event,
+                        result["checked_at"],
+                        incident_started_at,
+                        result.get("error_type"),
+                        result["message"],
+                    ),
+                )
 
     return update
