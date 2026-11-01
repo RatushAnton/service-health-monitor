@@ -1,3 +1,5 @@
+"""Load and validate YAML monitoring configuration."""
+
 import ipaddress
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -10,7 +12,7 @@ class ConfigError(ValueError):
 
 
 def require_text(target: dict, field: str, label: str) -> str:
-    """Ensure a required field contains nonempty text."""
+    """Return a required text field or raise ConfigError."""
     value = target.get(field)
 
     if not isinstance(value, str) or not value.strip():
@@ -20,7 +22,7 @@ def require_text(target: dict, field: str, label: str) -> str:
 
 
 def load_config(path: str | Path) -> dict:
-    """Read and validate a YAML configuration file."""
+    """Load YAML and validate settings and targets."""
 
     config_path = Path(path)
 

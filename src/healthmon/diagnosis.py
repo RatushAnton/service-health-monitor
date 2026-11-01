@@ -1,9 +1,11 @@
+"""In-memory incident detection and recovery logic."""
+
 from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
 class TargetState:
-    """Current monitoring state for one target."""
+    """Track a target's counters and incident state."""
 
     target_id: str
     consecutive_failures: int = 0
@@ -15,7 +17,7 @@ class TargetState:
 
 @dataclass(frozen=True)
 class StateUpdate:
-    """Updated state and any incident transition."""
+    """Hold the next state and optional incident event."""
 
     state: TargetState
     event: str | None = None
@@ -27,7 +29,7 @@ def evaluate_check(
     failure_threshold: int,
     recovery_threshold: int,
 ) -> StateUpdate:
-    """Apply a health-check result to a target's state."""
+    """Update counters and detect DOWN or RECOVERED."""
 
     if state.target_id != result["target_id"]:
         raise ValueError("Result target does not match state")

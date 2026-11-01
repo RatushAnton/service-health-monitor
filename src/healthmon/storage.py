@@ -1,3 +1,5 @@
+"""SQLite storage and retrieval of health-check results."""
+
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -37,7 +39,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 
 def init_db(db_path: str | Path) -> None:
-    """Create the database and tables if needed."""
+    """Initialize SQLite tables and indexes if missing."""
 
     path = Path(db_path)
 
@@ -50,7 +52,7 @@ def init_db(db_path: str | Path) -> None:
 
 
 def save_result(db_path: str | Path, result: dict) -> None:
-    """Insert a single health-check result."""
+    """Save one health-check result to SQLite."""
 
     with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute(
@@ -69,7 +71,7 @@ def save_result(db_path: str | Path, result: dict) -> None:
 
 
 def get_latest_results(db_path: str | Path) -> list[sqlite3.Row]:
-    """Return the most recent recorded check for each target."""
+    """Fetch the latest saved check for each target."""
 
     path = Path(db_path)
 
@@ -108,7 +110,7 @@ def get_history(
     target_id: str,
     limit: int = 20,
 ) -> list[sqlite3.Row]:
-    """Return recent check history for one target."""
+    """Fetch recent saved checks for one target."""
 
     path = Path(db_path)
 
