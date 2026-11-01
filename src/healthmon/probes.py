@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 import dns.exception
 import dns.resolver
 
+import socket
+
 
 def check_dns(target: dict, timeout_seconds: float) -> dict:
     """Check DNS resolution and return a structured result."""
@@ -74,6 +76,57 @@ def check_dns(target: dict, timeout_seconds: float) -> dict:
         "success": success,
         "latency_ms": round(latency_ms, 2),
         "records": records,
+        "error_type": error_type,
+        "message": message,
+    }
+
+
+def check_tcp(target: dict, timeout_seconds: float) -> dict:
+    """Check TCP connectivity to a host and port."""
+
+    host = target["host"]
+    port = target["port"]
+
+    checked_at = datetime.now(UTC).isoformat()
+    start = time.perf_counter()
+
+    success = False
+    error_type = None
+    message = ""
+
+    try:
+        # Attempt to establish a TCP connection
+        with socket.create_connection(
+            (host, port),
+            timeout=timeout_seconds,
+        ):
+            success = True
+            message = f"Connected to {host}:{port}"
+
+    except socket.gaierror as exc:
+        error_type = "DNS_ERROR"
+        message = f"Hostname resolution failed: {exc}"
+
+    except ConnectionRefusedError:
+        error_type = "TCP_REFUSED"
+        message = f"Connection refused by {host}:{port}"
+
+    except TimeoutError:
+        error_type = "TCP_TIMEOUT"
+        message = f"Connection timed out to {host}:{port}"
+
+    except OSError as exc:
+        error_type = "TCP_ERROR"
+        message = str(exc)
+
+    latency_ms = (time.perf_counter() - start) * 1000
+
+    return {
+        "target_id": target["id"],
+        "check_type": "tcp",
+        "checked_at": checked_at,
+        "success": success,
+        "latency_ms": round(latency_ms, 2),
         "error_type": error_type,
         "message": message,
     }
