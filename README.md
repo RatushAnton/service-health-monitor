@@ -1,11 +1,13 @@
 # Service Health Monitor
 
+[![CI](https://github.com/RatushAnton/service-health-monitor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RatushAnton/service-health-monitor/actions/workflows/ci.yml)
+
 A lightweight Python CLI for monitoring network connectivity and service
 availability through DNS, TCP, and HTTP/HTTPS checks.
 
 Built as a hands-on DevOps and infrastructure engineering portfolio project.
 
-**Current milestone: Phase 5 completed (reliable webhook alerting).**
+**Current milestone: Phase 6 completed (automated testing and CI).**
 
 The CLI supports persistent monitoring, incident detection,
 historical reporting, and queued webhook notifications with retry
@@ -26,6 +28,8 @@ scheduling and lease-based worker coordination.
 - Webhook notification delivery
 - Exponential retry backoff and delivery diagnostics
 - Atomic event claims and time-limited worker leases
+- Automated pytest tests for incidents, SQLite, CLI, and webhooks
+- GitHub Actions CI for Python 3.11, 3.12, and 3.13
 
 ### Monitoring layers
 
@@ -219,6 +223,9 @@ The failure will also be recorded in SQLite.
 
 ```text
 service-health-monitor/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── config/
 │   └── targets.example.yaml
 ├── src/
@@ -231,6 +238,11 @@ service-health-monitor/
 │       ├── storage.py
 │       ├── models.py
 │       └── alerting.py
+├── tests/
+│   ├── test_alerting.py
+│   ├── test_cli.py
+│   ├── test_diagnosis.py
+│   └── test_storage.py
 ├── .env.example
 ├── .gitignore
 ├── pyproject.toml
@@ -306,29 +318,79 @@ A local outage and recovery test verified:
 
 ## Development
 
-
-Run linting:
+### Install development dependencies
 
 ```bash
-ruff check src/healthmon
+python -m pip install -e '.[dev]'
 ```
 
-Check formatting:
+### Run automated tests
+
+Run the complete pytest suite:
 
 ```bash
-ruff format --check src/healthmon
+python -m pytest -v
+```
+
+Run the tests with compact output:
+
+```bash
+python -m pytest -q
+```
+
+Run a specific test module:
+
+```bash
+python -m pytest -v tests/test_storage.py
+```
+
+The suite currently contains 26 test cases covering:
+
+- Incident detection, recovery, and threshold validation
+- SQLite persistence, schema migration, and transaction rollback
+- Notification queue claims, leases, and retry state
+- Webhook JSON payloads and HTTP failures
+- CLI execution, reporting, and exit codes
+
+Tests use temporary SQLite databases and mocked network
+operations. They do not require access to monitored services.
+
+### Code quality checks
+
+Run Ruff linting:
+
+```bash
+ruff check src/healthmon tests
+```
+
+Verify formatting:
+
+```bash
+ruff format --check src/healthmon tests
 ```
 
 Check Python compilation:
 
 ```bash
-python -m compileall -q src
+python -m compileall -q src tests
 ```
 
-DNS, TCP, HTTP, SQLite, CLI, and incident-lifecycle functionality have
-been verified through manual tests.
+### Continuous integration
 
-Automated pytest tests and GitHub Actions CI are planned.
+The GitHub Actions workflow is defined in
+`.github/workflows/ci.yml`.
+
+CI runs automatically on pushes and pull requests targeting
+`main`. It can also be started manually using the Actions tab.
+
+The workflow runs on Ubuntu using Python 3.11, 3.12, and
+3.13. Each environment installs the project and executes
+compilation checks, Ruff linting, formatting checks, and pytest.
+
+All three Python versions passed during the initial CI
+deployment.
+
+[View GitHub Actions runs](https://github.com/RatushAnton/service-health-monitor/actions)
 
 ## Project progress
 
@@ -341,7 +403,7 @@ Automated pytest tests and GitHub Actions CI are planned.
 | 4B | Persistent incident state | Complete |
 | 4C | Incident integration with CLI | Complete |
 | 5 | Notifications and recovery alerts | Complete |
-| 6 | Automated tests and GitHub Actions | Planned |
+| 6 | Automated tests and GitHub Actions | Complete |
 | 7 | Raspberry Pi deployment with systemd | Planned |
 | 8 | End-to-end outage demo and documentation | Planned |
 
@@ -354,7 +416,7 @@ Automated pytest tests and GitHub Actions CI are planned.
 - No automatic scheduling or Raspberry Pi deployment is configured.
 - Historical UP status may be stale.
 - Network errors do not always identify the underlying root cause.
-- Automated tests and CI have not yet been added.
+- Python versions outside the CI matrix are not automatically tested.
 
 ## Security and local data
 
