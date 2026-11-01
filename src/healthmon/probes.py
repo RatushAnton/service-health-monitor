@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import dns.exception
 import dns.resolver
+import httpx
 
 
 def check_dns(target: dict, timeout_seconds: float) -> dict:
@@ -126,6 +127,63 @@ def check_tcp(target: dict, timeout_seconds: float) -> dict:
         "checked_at": checked_at,
         "success": success,
         "latency_ms": round(latency_ms, 2),
+        "error_type": error_type,
+        "message": message,
+    }
+
+
+def check_http(target: dict, timeout_seconds: float) -> dict:
+    """Check an HTTP endpoint and verify its status code."""
+
+    url = target["url"]
+    expected_status = target.get("expected_status", 200)
+
+    checked_at = datetime.now(UTC).isoformat()
+    start = time.perf_counter()
+
+    success = False
+    status_code = None
+    error_type = None
+    message = ""
+
+    try:
+        response = httpx.get(
+            url,
+            timeout=timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+        status_code = response.status_code
+
+        if status_code == expected_status:
+            success = True
+            message = f"HTTP {status_code} OK"
+        else:
+            error_type = "HTTP_STATUS"
+            message = f"Expected HTTP {expected_status}, received HTTP {status_code}"
+
+    except httpx.TimeoutException:
+        error_type = "HTTP_TIMEOUT"
+        message = "HTTP request timed out"
+
+    except httpx.ConnectError as exc:
+        error_type = "HTTP_CONNECT_ERROR"
+        message = str(exc)
+
+    except httpx.RequestError as exc:
+        error_type = "HTTP_REQUEST_ERROR"
+        message = str(exc)
+
+    latency_ms = (time.perf_counter() - start) * 1000
+
+    return {
+        "target_id": target["id"],
+        "check_type": "http",
+        "checked_at": checked_at,
+        "success": success,
+        "latency_ms": round(latency_ms, 2),
+        "status_code": status_code,
         "error_type": error_type,
         "message": message,
     }
