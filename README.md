@@ -444,8 +444,11 @@ resource limits, SQLite persistence and localhost-only HTTP access.
 See the [Raspberry Pi deployment runbook](docs/pi-deployment.md)
 for preparation, deployment and operational procedures.
 
-**Status:** Deployment configuration prepared; Raspberry Pi installation
-and backup verification remain pending.
+See [SQLite Backup and Recovery](docs/backup-recovery.md)
+for backup verification, retention and off-device export.
+
+**Status:** Deployment and backup tooling prepared; Raspberry Pi installation,
+backup scheduling and off-device recovery verification remain pending.
 
 ## Project goal
 

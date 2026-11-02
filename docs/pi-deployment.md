@@ -159,12 +159,18 @@ It must not be combined with -v.
 
 The monitoring database is stored in the named pi_data volume.
 
-Database backups must use SQLite's online backup API or
-another consistent SQLite backup mechanism, not a simple
-copy of an actively written database file.
+The `healthmon.backup` module provides consistent SQLite
+snapshots, integrity verification, retention and temporary
+restore checks.
 
-Automated backups, off-device storage and restoration
-verification are planned for Phase 7G.5C.
+Local backups are initially stored inside the dedicated Pi
+data volume. Verified copies should be exported to the Mac.
+
+See [Backup and Recovery](backup-recovery.md) for the manual
+procedures and off-device transfer script.
+
+Automated scheduling and full production recovery testing
+remain pending.
 
 ## Initial deployment limitations
 
