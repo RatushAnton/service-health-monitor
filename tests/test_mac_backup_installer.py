@@ -178,3 +178,71 @@ def test_update_rejects_unrecognized_agent(
 
     runtime = home / "Library/Application Support/service-health-monitor"
     assert (runtime / "current").resolve() == previous
+
+
+def test_update_migrates_legacy_manual_installation(
+    repository: Path,
+    tmp_path: Path,
+):
+    """Migrate an existing non-versioned runtime without losing data."""
+    home = tmp_path / "home"
+    runtime = home / "Library/Application Support/service-health-monitor"
+
+    scripts = runtime / "scripts"
+    scripts.mkdir(parents=True)
+
+    legacy_script = scripts / "pull-latest-pi-backup.sh"
+    legacy_script.write_text("#!/bin/bash\n")
+
+    backups = runtime / "backups"
+    backups.mkdir()
+    original_backup = backups / "important.db"
+    original_backup.write_bytes(b"original backup")
+
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+
+    plist = agents / f"{installer.LABEL}.plist"
+
+    original_config = {
+        "Label": installer.LABEL,
+        "ProgramArguments": [
+            str(legacy_script),
+            "healthmon-backup-pi",
+            str(backups),
+        ],
+        "RunAtLoad": True,
+        "StartInterval": 21600,
+        "StandardOutPath": "/tmp/backup.log",
+        "StandardErrorPath": "/tmp/backup-error.log",
+        "EnvironmentVariables": {
+            "PYTHONPATH": str(runtime / "src"),
+        },
+    }
+
+    with plist.open("wb") as stream:
+        plistlib.dump(original_config, stream)
+
+    assert not (runtime / "current").exists()
+
+    updated_plist, release = installer.install(
+        repository,
+        home,
+        update=True,
+    )
+
+    with updated_plist.open("rb") as stream:
+        updated = plistlib.load(stream)
+
+    assert (runtime / "current").resolve() == release
+    assert legacy_script.read_text() == "#!/bin/bash\n"
+    assert original_backup.read_bytes() == b"original backup"
+
+    assert updated["ProgramArguments"][0] == str(
+        runtime / "current/scripts/pull-latest-pi-backup.sh"
+    )
+    assert updated["ProgramArguments"][1] == "healthmon-backup-pi"
+    assert updated["ProgramArguments"][2] == str(backups)
+    assert updated["StartInterval"] == 21600
+    assert updated["StandardOutPath"] == "/tmp/backup.log"
+    assert updated["EnvironmentVariables"]["PYTHONPATH"] == str(runtime / "current/src")
