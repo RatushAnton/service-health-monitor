@@ -49,3 +49,32 @@ jobs:
 
       - name: Run automated tests
         run: python -m pytest -v
+
+  docker:
+    name: Docker image smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare example configuration
+        run: cp deploy/docker/targets.example.yaml deploy/docker/targets.yaml
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build Docker image
+        run: docker compose build worker
+
+      - name: Verify non-root image
+        run: |
+          test "$(docker image inspect service-health-monitor:local --format '{{.Config.User}}')" = "10001:10001"
+
+      - name: Verify container commands
+        run: |
+          docker run --rm service-health-monitor:local --help
+          docker run --rm --entrypoint python service-health-monitor:local -m healthmon.worker --help

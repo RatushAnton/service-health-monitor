@@ -3,7 +3,6 @@ name: service-health-monitor
 services:
   healthmon:
     image: service-health-monitor:local
-
     build:
       context: .
       dockerfile: Dockerfile
@@ -23,17 +22,52 @@ services:
       - monitor_test_data:/var/lib/service-health-monitor
 
     read_only: true
-
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=16m
-
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"
 
+  worker:
+    image: service-health-monitor:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    profiles:
+      - worker
+
+    entrypoint:
+      - python
+      - -m
+      - healthmon.worker
+
+    command:
+      - --config
+      - /etc/healthmon/targets.yaml
+      - --db
+      - /var/lib/service-health-monitor/health.db
+      - --interval
+      - "300"
+
+    volumes:
+      - ./deploy/docker/targets.yaml:/etc/healthmon/targets.yaml:ro
+      - monitor_worker_data:/var/lib/service-health-monitor
+
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    security_opt:
+      - no-new-privileges:true
     cap_drop:
       - ALL
 
-    restart: "no"
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
 
 volumes:
   monitor_test_data:
+  monitor_worker_data:
