@@ -27,13 +27,18 @@ CHECKERS = {
 
 
 def run_checks(config_path: str, db_path: str) -> int:
-    """Run all probes, save results, and print their status."""
-
+    """Load YAML and execute health checks."""
     try:
         config = load_config(config_path)
     except ConfigError as exc:
         print(f"Configuration error: {exc}")
         return 2
+
+    return run_checks_config(config, db_path)
+
+
+def run_checks_config(config: dict, db_path: str) -> int:
+    """Run health checks using an already-loaded configuration."""
 
     # Prepare the database before running checks.
     try:

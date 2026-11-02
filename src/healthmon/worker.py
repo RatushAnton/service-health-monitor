@@ -2,9 +2,11 @@
 
 import argparse
 import signal
+import sqlite3
 from threading import Event
 
-from healthmon.cli import run_checks
+from healthmon.cli import run_checks, run_checks_config
+from healthmon.registry import RegistryNotInitialized, read_registry_config
 
 
 def positive_interval(value: str) -> int:
@@ -27,16 +29,34 @@ def run_worker(
     *,
     stop_event: Event | None = None,
     once: bool = False,
+    source: str = "yaml",
 ) -> int:
-    """Run checks repeatedly until shutdown is requested."""
+    """Run checks repeatedly using YAML or database configuration."""
 
     if interval_seconds < 1:
         raise ValueError("Interval must be positive")
 
+    if source not in ("yaml", "db"):
+        raise ValueError("Source must be yaml or db")
+
     shutdown = stop_event if stop_event is not None else Event()
 
     while not shutdown.is_set():
-        result = run_checks(config_path, db_path)
+        if source == "db":
+            try:
+                config = read_registry_config(db_path)
+            except (
+                RegistryNotInitialized,
+                sqlite3.Error,
+                OSError,
+                ValueError,
+            ) as exc:
+                print(f"Registry configuration error: {exc}", flush=True)
+                result = 2
+            else:
+                result = run_checks_config(config, db_path)
+        else:
+            result = run_checks(config_path, db_path)
 
         if once:
             return result
@@ -57,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(
         description="Service Health Monitor background worker"
+    )
+
+    parser.add_argument(
+        "--source",
+        choices=("yaml", "db"),
+        default="yaml",
+        help="Source of monitoring configuration",
     )
 
     parser.add_argument(
@@ -95,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         args.interval,
         stop_event=shutdown,
         once=args.once,
+        source=args.source,
     )
 
 
