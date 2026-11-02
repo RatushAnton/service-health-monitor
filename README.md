@@ -433,6 +433,20 @@ The following files are excluded from Git:
 
 Avoid committing private hostnames, internal IP addresses, and credentials.
 
+## Raspberry Pi 5 deployment
+
+A dedicated Raspberry Pi Docker Compose configuration is available
+in `compose.pi.yaml`.
+
+The deployment uses an isolated Compose project, non-root containers,
+resource limits, SQLite persistence and localhost-only HTTP access.
+
+See the [Raspberry Pi deployment runbook](docs/pi-deployment.md)
+for preparation, deployment and operational procedures.
+
+**Status:** Deployment configuration prepared; Raspberry Pi installation
+and backup verification remain pending.
+
 ## Project goal
 
 Build a practical, self-hosted service monitor that runs periodically on

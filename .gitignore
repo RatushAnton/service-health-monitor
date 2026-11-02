@@ -25,3 +25,7 @@ deploy/docker/targets.yaml
 /deploy/local/admin-token.txt
 
 /deploy/e2e/admin-token.txt
+
+# Raspberry Pi deployment
+/deploy/pi/targets.yaml
+/deploy/pi/admin-token.txt

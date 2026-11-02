@@ -1,0 +1,132 @@
+name: service-health-monitor-pi
+
+x-app: &app
+  image: service-health-monitor:pi
+  read_only: true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=16m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 128
+  mem_limit: 256m
+  cpus: "0.50"
+
+services:
+  registry-init:
+    <<: *app
+    entrypoint:
+      - python
+      - -m
+      - healthmon.registry
+    command:
+      - --config
+      - /etc/healthmon/targets.yaml
+      - --db
+      - /var/lib/service-health-monitor/health.db
+    volumes:
+      - ./deploy/pi/targets.yaml:/etc/healthmon/targets.yaml:ro
+      - pi_data:/var/lib/service-health-monitor
+    restart: "no"
+
+  worker:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - python
+      - -m
+      - healthmon.worker
+    command:
+      - --source
+      - db
+      - --db
+      - /var/lib/service-health-monitor/health.db
+      - --interval
+      - "300"
+    volumes:
+      - pi_data:/var/lib/service-health-monitor
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - python
+      - -m
+      - uvicorn
+      - healthmon.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    environment:
+      HEALTHMON_DB_PATH: /var/lib/service-health-monitor/health.db
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - pi_data:/var/lib/service-health-monitor:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+
+  admin:
+    <<: *app
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - python
+      - -m
+      - uvicorn
+      - healthmon.admin_api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+    environment:
+      HEALTHMON_DB_PATH: /var/lib/service-health-monitor/health.db
+      HEALTHMON_ADMIN_TOKEN_FILE: /run/secrets/healthmon_admin_token
+    ports:
+      - "127.0.0.1:18081:8081"
+    secrets:
+      - healthmon_admin_token
+    volumes:
+      - pi_data:/var/lib/service-health-monitor
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/admin/login', timeout=3).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+
+secrets:
+  healthmon_admin_token:
+    file: ./deploy/pi/admin-token.txt
+
+volumes:
+  pi_data:
