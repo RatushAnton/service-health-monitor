@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Manage monitors · Service Health Monitor</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">SERVICE HEALTH MONITOR</p>
+      <h1>Manage monitors</h1>
+    </div>
+    <form action="/admin/logout" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Sign out</button>
+    </form>
+  </header>
+  <main class="container">
+    {% if updated %}<p class="success" role="status">Saved changes to {{ updated }}.</p>{% endif %}
+    <p class="muted">Edit DNS, TCP and HTTP targets. Changes take effect on the worker's next monitoring cycle.</p>
+    <div class="panel table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Target ID</th><th>Enabled</th><th></th></tr></thead>
+        <tbody>
+          {% for monitor in monitors %}
+          <tr>
+            <td><strong>{{ monitor.name }}</strong></td>
+            <td>{{ monitor.type | upper }}</td>
+            <td><code>{{ monitor.id }}</code></td>
+            <td>{% if monitor.enabled %}<span class="pill live">Enabled</span>{% else %}<span class="pill paused">Paused</span>{% endif %}</td>
+            <td><a class="edit-link" href="/admin/monitors/{{ monitor.id | urlencode }}/edit">Edit</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No configured monitors.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote">The existing /api/admin endpoints remain bearer-token authenticated. This page uses server-side sessions.</p>
+  </main>
+</body>
+</html>

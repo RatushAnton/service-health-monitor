@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.staticfiles import StaticFiles
 
+from healthmon.admin_web import router as admin_web_router
 from healthmon.monitor_models import EnabledInput, MonitorInput
 from healthmon.registry import (
     MonitorConflict,
@@ -200,3 +202,12 @@ def change_monitor_enabled(
 def remove_monitor(target_id: str) -> None:
     """Archive the target while retaining its history."""
     registry_operation(archive_monitor, target_id)
+
+
+# Serve the browser administration UI without modifying bearer-only APIs.
+app.mount(
+    "/admin/assets",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static"),
+    name="admin-assets",
+)
+app.include_router(admin_web_router)
