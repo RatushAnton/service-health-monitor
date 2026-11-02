@@ -19,3 +19,5 @@ config.local.yaml
 
 # Local monitoring configuration
 config/targets.yaml
+# Docker local configuration
+deploy/docker/targets.yaml

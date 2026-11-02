@@ -1,0 +1,39 @@
+name: service-health-monitor
+
+services:
+  healthmon:
+    image: service-health-monitor:local
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    profiles:
+      - manual
+
+    command:
+      - check
+      - --config
+      - /etc/healthmon/targets.yaml
+      - --db
+      - /var/lib/service-health-monitor/health.db
+
+    volumes:
+      - ./deploy/docker/targets.yaml:/etc/healthmon/targets.yaml:ro
+      - monitor_test_data:/var/lib/service-health-monitor
+
+    read_only: true
+
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    restart: "no"
+
+volumes:
+  monitor_test_data:
