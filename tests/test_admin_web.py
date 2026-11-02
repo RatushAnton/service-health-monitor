@@ -8,7 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from healthmon.admin_api import app
-from healthmon.registry import bootstrap_registry, list_registry_monitors
+from healthmon.registry import (
+    bootstrap_registry,
+    list_registry_monitors,
+    read_registry_config,
+)
 
 CONFIG = """
 settings:
@@ -177,3 +181,238 @@ def test_missing_origin_may_use_csrf_but_cross_origin_is_rejected(browser):
     )
     assert result.status_code == 403
     assert list_registry_monitors(db)[0]["name"] == "Original DNS"
+
+
+def test_login_origin_policy(browser):
+    client, bearer, _, _ = browser
+
+    page = client.get("/admin/login")
+    assert page.headers["referrer-policy"] == "same-origin"
+
+    # Requests with opaque origins must remain blocked.
+    rejected = client.post(
+        "/admin/login",
+        data={"token": bearer},
+        headers={"Origin": "null"},
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 403
+
+    # A legitimate same-origin form submission must succeed.
+    accepted = client.post(
+        "/admin/login",
+        data={"token": bearer},
+        headers={"Origin": str(client.base_url).rstrip("/")},
+        follow_redirects=False,
+    )
+    assert accepted.status_code == 303
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {
+            "id": "new_dns",
+            "name": "New DNS",
+            "type": "dns",
+            "host": "example.org",
+            "record_type": "A",
+        },
+        {
+            "id": "new_tcp",
+            "name": "New TCP",
+            "type": "tcp",
+            "host": "example.org",
+            "port": "443",
+        },
+        {
+            "id": "new_http",
+            "name": "New HTTP",
+            "type": "http",
+            "url": "https://example.org/",
+            "expected_status": "200",
+        },
+    ],
+)
+def test_browser_can_create_monitors(browser, fields):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    page = client.get("/admin/monitors/new")
+    csrf = get_csrf(page.text)
+
+    response = client.post(
+        "/admin/monitors/new",
+        data={"csrf_token": csrf, **fields},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert fields["id"] in {target["id"] for target in list_registry_monitors(db)}
+
+
+def test_new_monitor_requires_login(browser):
+    client, _, _, _ = browser
+
+    assert (
+        client.get(
+            "/admin/monitors/new",
+            follow_redirects=False,
+        ).status_code
+        == 303
+    )
+
+    assert (
+        client.post(
+            "/admin/monitors/new",
+            data={"id": "unauthorized"},
+        ).status_code
+        == 401
+    )
+
+
+def test_duplicate_monitor_returns_409(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors/new").text)
+    response = client.post(
+        "/admin/monitors/new",
+        data={
+            "csrf_token": csrf,
+            "id": "demo_dns",
+            "name": "Duplicate",
+            "type": "dns",
+            "host": "example.org",
+        },
+    )
+
+    assert response.status_code == 409
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_new_monitor_csrf_protection(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    response = client.post(
+        "/admin/monitors/new",
+        data={
+            "csrf_token": "wrong",
+            "id": "new_dns",
+            "name": "New DNS",
+            "type": "dns",
+            "host": "example.org",
+        },
+    )
+
+    assert response.status_code == 403
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_pause_and_resume(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors").text)
+    endpoint = "/admin/monitors/demo_dns/enabled"
+
+    paused = client.post(
+        endpoint,
+        data={"csrf_token": csrf, "enabled": "0"},
+        follow_redirects=False,
+    )
+
+    assert paused.status_code == 303
+    assert list_registry_monitors(db)[0]["enabled"] is False
+    assert read_registry_config(db)["targets"] == []
+
+    resumed = client.post(
+        endpoint,
+        data={"csrf_token": csrf, "enabled": "1"},
+        follow_redirects=False,
+    )
+
+    assert resumed.status_code == 303
+    assert list_registry_monitors(db)[0]["enabled"] is True
+
+
+def test_pause_rejects_invalid_state(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors").text)
+
+    response = client.post(
+        "/admin/monitors/demo_dns/enabled",
+        data={"csrf_token": csrf, "enabled": "invalid"},
+    )
+
+    assert response.status_code == 422
+    assert list_registry_monitors(db)[0]["enabled"] is True
+
+
+def test_pause_requires_valid_csrf(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    response = client.post(
+        "/admin/monitors/demo_dns/enabled",
+        data={"csrf_token": "wrong", "enabled": "0"},
+    )
+
+    assert response.status_code == 403
+    assert list_registry_monitors(db)[0]["enabled"] is True
+
+
+def test_create_rejects_cross_origin(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors/new").text)
+
+    response = client.post(
+        "/admin/monitors/new",
+        data={
+            "csrf_token": csrf,
+            "id": "new_dns",
+            "name": "New DNS",
+            "type": "dns",
+            "host": "example.org",
+        },
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_pause_requires_login(browser):
+    client, _, _, db = browser
+
+    response = client.post(
+        "/admin/monitors/demo_dns/enabled",
+        data={"enabled": "0"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+    assert list_registry_monitors(db)[0]["enabled"] is True
+
+
+def test_pause_rejects_cross_origin(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    page = client.get("/admin/monitors")
+    csrf = get_csrf(page.text)
+
+    response = client.post(
+        "/admin/monitors/demo_dns/enabled",
+        data={"csrf_token": csrf, "enabled": "0"},
+        headers={"Origin": "https://attacker.example"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert list_registry_monitors(db)[0]["enabled"] is True
