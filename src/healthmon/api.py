@@ -73,11 +73,34 @@ def monitor_dict(row: sqlite3.Row) -> dict:
 
 
 def latest_monitors() -> list[dict]:
-    """Return the latest results, handling database errors."""
+    """Return latest results, excluding archived monitors."""
     path = database_path()
 
     try:
         rows = get_latest_results(path)
+
+        with closing(sqlite3.connect(path)) as connection:
+            initialized = connection.execute(
+                """
+                SELECT 1 FROM registry_settings
+                WHERE singleton = 1
+                """
+            ).fetchone()
+
+            if initialized is not None:
+                visible_ids = {
+                    row[0]
+                    for row in connection.execute(
+                        """
+                        SELECT target_id
+                        FROM monitor_registry
+                        WHERE archived_at IS NULL
+                        """
+                    )
+                }
+
+                rows = [row for row in rows if row["target_id"] in visible_ids]
+
     except (sqlite3.Error, OSError) as exc:
         raise HTTPException(
             status_code=503,

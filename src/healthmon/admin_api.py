@@ -7,9 +7,19 @@ from contextlib import closing
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 
-from healthmon.registry import list_registry_monitors
+from healthmon.monitor_models import EnabledInput, MonitorInput
+from healthmon.registry import (
+    MonitorConflict,
+    MonitorNotFound,
+    RegistryNotInitialized,
+    archive_monitor,
+    create_monitor,
+    list_registry_monitors,
+    set_monitor_enabled,
+    update_monitor,
+)
 
 app = FastAPI(
     title="Service Health Monitor Administration",
@@ -79,6 +89,36 @@ def admin_database_path() -> Path:
     return path
 
 
+def registry_operation(operation, *args):
+    """Convert registry errors to API responses."""
+    try:
+        return operation(admin_database_path(), *args)
+
+    except MonitorNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitor not found",
+        ) from exc
+
+    except MonitorConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    except RegistryNotInitialized as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Monitor registry is not initialized",
+        ) from exc
+
+    except (sqlite3.Error, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Monitor registry cannot be updated",
+        ) from exc
+
+
 @app.get(
     "/api/admin/monitors",
     dependencies=[Depends(require_admin)],
@@ -113,3 +153,50 @@ def get_configured_monitors() -> dict:
         ) from exc
 
     return {"monitors": monitors}
+
+
+@app.post(
+    "/api/admin/monitors",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+def add_monitor(payload: MonitorInput) -> dict:
+    """Create a monitoring target."""
+    target = payload.model_dump(exclude_none=True)
+    return registry_operation(create_monitor, target)
+
+
+@app.put(
+    "/api/admin/monitors/{target_id}",
+    dependencies=[Depends(require_admin)],
+)
+def edit_monitor(target_id: str, payload: MonitorInput) -> dict:
+    """Replace an existing target's configuration."""
+    target = payload.model_dump(exclude_none=True)
+    return registry_operation(update_monitor, target_id, target)
+
+
+@app.patch(
+    "/api/admin/monitors/{target_id}/enabled",
+    dependencies=[Depends(require_admin)],
+)
+def change_monitor_enabled(
+    target_id: str,
+    payload: EnabledInput,
+) -> dict:
+    """Pause or resume a monitor."""
+    return registry_operation(
+        set_monitor_enabled,
+        target_id,
+        payload.enabled,
+    )
+
+
+@app.delete(
+    "/api/admin/monitors/{target_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
+def remove_monitor(target_id: str) -> None:
+    """Archive the target while retaining its history."""
+    registry_operation(archive_monitor, target_id)

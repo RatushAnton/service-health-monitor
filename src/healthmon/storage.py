@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS monitor_registry (
     target_json TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1
         CHECK (enabled IN (0, 1)),
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    archived_at TEXT
 );
 """
 
@@ -106,6 +107,13 @@ def init_db(db_path: str | Path) -> None:
 
         # New registry tables
         connection.execute(CREATE_MONITOR_REGISTRY_SQL)
+        registry_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(monitor_registry)")
+        }
+        if "archived_at" not in registry_columns:
+            connection.execute(
+                "ALTER TABLE monitor_registry ADD COLUMN archived_at TEXT"
+            )
         connection.execute(CREATE_REGISTRY_SETTINGS_SQL)
 
         # Upgrade databases created before retry scheduling existed.
