@@ -5,9 +5,9 @@
 Phase 7G.5C implements consistent SQLite snapshots, integrity
 validation, temporary restoration tests, and backup retention.
 
-The automated tests run on the development machine. Raspberry Pi
-deployment, scheduling, and off-device recovery verification are
-not yet complete.
+Raspberry Pi deployment and automated backup scheduling were
+validated on November 2, 2026. Full disaster-recovery cutover
+testing remains outstanding.
 
 ## Backup design
 
@@ -146,8 +146,8 @@ not a substitute for full production recovery testing.
 - Do not expose the admin HTTP interface publicly.
 - The Pi's existing undervoltage history remains a reliability risk.
 - Local retention is count-based, not a maximum disk-size limit.
-- Scheduling definitions are prepared but not yet activated.
-- Off-device backups remain manual until scheduling is implemented.
+- The Pi's daily systemd backup timer is enabled and active.
+- The Mac LaunchAgent performs scheduled off-device verification.
 
 ## Verification
 
@@ -190,7 +190,7 @@ The script requires:
 
 - An SSH host alias named healthmon-backup-pi
 - Non-interactive SSH key authentication
-- A working Python virtual environment in the repository
+- An isolated Python virtual environment in the installed runtime
 - The existing pull-pi-backup.sh transfer script
 
 The LaunchAgent installer is:
@@ -217,5 +217,36 @@ The Mac can fetch the latest retained backup when it reconnects.
 - The monitoring host's existing power instability remains
   an operational risk.
 
-The scheduling configurations must be validated and explicitly
-enabled after the corresponding GitHub changes are merged.
+Both schedulers were activated and verified on November 2, 2026.
+The installer prepares files but does not activate or reload launchd.
+
+
+## Self-contained macOS installer
+
+The installer stages a versioned runtime under:
+
+    ~/Library/Application Support/service-health-monitor/
+
+The runtime includes the backup scripts, SQLite backup module, and
+an isolated Python virtual environment. A `current` symlink points
+to the selected release.
+
+For a new installation:
+
+    python3 scripts/install-mac-backup-agent.py
+
+For an existing installation:
+
+    python3 scripts/install-mac-backup-agent.py --update
+
+The update preserves the existing LaunchAgent's SSH alias, backup
+destination, scheduling interval and logging configuration.
+
+The installer does not load or reload the LaunchAgent.
+Activation must be performed separately after validation.
+
+Existing backups and previous releases are not deleted automatically.
+The application runtime is independent of the development repository.
+
+The installer should not be run against a working production
+LaunchAgent until the replacement has passed validation.
