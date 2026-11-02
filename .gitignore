@@ -21,3 +21,5 @@ config.local.yaml
 config/targets.yaml
 # Docker local configuration
 deploy/docker/targets.yaml
+
+/deploy/local/admin-token.txt
