@@ -13,6 +13,7 @@ from healthmon.registry import (
     list_registry_monitors,
     read_registry_config,
 )
+from healthmon.storage import get_history, save_result
 
 CONFIG = """
 settings:
@@ -48,8 +49,11 @@ def login(client, bearer):
 
 
 def get_csrf(html):
-    result = re.search(r'name="csrf_token" value="([^"]+)"', html)
-    assert result is not None
+    result = re.search(
+        r'name="csrf_token"\s+value="([^"]+)"',
+        html,
+    )
+    assert result is not None, "CSRF token not found in HTML"
     return result.group(1)
 
 
@@ -416,3 +420,207 @@ def test_pause_rejects_cross_origin(browser):
 
     assert response.status_code == 403
     assert list_registry_monitors(db)[0]["enabled"] is True
+
+
+def test_archive_requires_session(browser):
+    client, _, _, db = browser
+    url = "/admin/monitors/demo_dns/archive"
+
+    assert client.get(url, follow_redirects=False).status_code == 303
+    assert (
+        client.post(
+            url,
+            data={"confirm_id": "demo_dns"},
+            follow_redirects=False,
+        ).status_code
+        == 401
+    )
+
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_archive_confirmation_is_read_only(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    page = client.get("/admin/monitors/demo_dns/archive")
+
+    assert page.status_code == 200
+    assert "Original DNS" in page.text
+    assert 'name="confirm_id"' in page.text
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_archive_requires_exact_confirmation(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    page = client.get("/admin/monitors/demo_dns/archive")
+
+    response = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={
+            "csrf_token": get_csrf(page.text),
+            "confirm_id": "wrong_id",
+        },
+    )
+
+    assert response.status_code == 422
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_archive_rejects_invalid_csrf(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    response = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={
+            "csrf_token": "invalid",
+            "confirm_id": "demo_dns",
+        },
+    )
+
+    assert response.status_code == 403
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_archive_rejects_cross_origin(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    page = client.get("/admin/monitors/demo_dns/archive")
+
+    response = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={
+            "csrf_token": get_csrf(page.text),
+            "confirm_id": "demo_dns",
+        },
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert len(list_registry_monitors(db)) == 1
+
+
+def test_archive_preserves_history_and_incidents(browser):
+    client, bearer, _, db = browser
+
+    save_result(
+        db,
+        {
+            "target_id": "demo_dns",
+            "check_type": "dns",
+            "checked_at": "2026-11-02T08:00:00+00:00",
+            "success": True,
+            "latency_ms": 5.0,
+            "message": "OK",
+        },
+    )
+
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.execute(
+            """
+            INSERT INTO incident_events
+                (target_id, event_type, occurred_at, message)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("demo_dns", "DOWN", "2026-11-02T08:00:00+00:00", "Failed"),
+        )
+        conn.execute(
+            "INSERT INTO target_state (target_id) VALUES (?)",
+            ("demo_dns",),
+        )
+
+    login(client, bearer)
+    page = client.get("/admin/monitors/demo_dns/archive")
+
+    response = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={
+            "csrf_token": get_csrf(page.text),
+            "confirm_id": "demo_dns",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert list_registry_monitors(db) == []
+    assert read_registry_config(db)["targets"] == []
+    assert len(get_history(db, "demo_dns")) == 1
+
+    with closing(sqlite3.connect(db)) as conn:
+        row = conn.execute(
+            "SELECT enabled, archived_at FROM monitor_registry WHERE target_id = ?",
+            ("demo_dns",),
+        ).fetchone()
+        assert row[0] == 0
+        assert row[1] is not None
+
+        events = conn.execute(
+            "SELECT COUNT(*) FROM incident_events WHERE target_id = ?",
+            ("demo_dns",),
+        ).fetchone()[0]
+        assert events == 1
+
+        state = conn.execute(
+            "SELECT COUNT(*) FROM target_state WHERE target_id = ?",
+            ("demo_dns",),
+        ).fetchone()[0]
+        assert state == 0
+
+
+def test_archive_cannot_be_repeated_or_resumed(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors").text)
+
+    first = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={"csrf_token": csrf, "confirm_id": "demo_dns"},
+        follow_redirects=False,
+    )
+    assert first.status_code == 303
+
+    second = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={"csrf_token": csrf, "confirm_id": "demo_dns"},
+    )
+    assert second.status_code == 404
+
+    resume = client.post(
+        "/admin/monitors/demo_dns/enabled",
+        data={"csrf_token": csrf, "enabled": "1"},
+    )
+    assert resume.status_code == 404
+    assert list_registry_monitors(db) == []
+
+
+def test_archived_id_cannot_be_recreated_from_browser(browser):
+    client, bearer, _, db = browser
+    login(client, bearer)
+
+    csrf = get_csrf(client.get("/admin/monitors").text)
+
+    archived = client.post(
+        "/admin/monitors/demo_dns/archive",
+        data={"csrf_token": csrf, "confirm_id": "demo_dns"},
+        follow_redirects=False,
+    )
+    assert archived.status_code == 303
+
+    response = client.post(
+        "/admin/monitors/new",
+        data={
+            "csrf_token": csrf,
+            "id": "demo_dns",
+            "name": "Replacement",
+            "type": "dns",
+            "host": "example.org",
+        },
+    )
+
+    assert response.status_code == 409
+    assert list_registry_monitors(db) == []
