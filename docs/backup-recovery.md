@@ -146,16 +146,76 @@ not a substitute for full production recovery testing.
 - Do not expose the admin HTTP interface publicly.
 - The Pi's existing undervoltage history remains a reliability risk.
 - Local retention is count-based, not a maximum disk-size limit.
-- Automated backup scheduling is not yet configured.
+- Scheduling definitions are prepared but not yet activated.
 - Off-device backups remain manual until scheduling is implemented.
 
 ## Verification
 
 Development verification completed on November 2, 2026:
 
-- Backup-specific tests: 14 passed
-- Full Python test suite: 108 passed
+- Backup-specific tests: 15 passed
+- Full Python test suite: 109 passed
 - Ruff lint and formatting: passed
 - Backup CLI: create, verify and restore-check available
 
-No Raspberry Pi deployment or restore operation was performed.
+Raspberry Pi deployment, manual SQLite backup, temporary restore verification, and off-device export to the Mac were validated on November 2, 2026. A full disaster-recovery cutover remains untested.
+
+## Automated Backup Scheduling — Phase 7G.5E
+
+### Raspberry Pi
+
+The daily backup service and timer are stored in:
+
+- deploy/pi/systemd/service-health-monitor-backup.service
+- deploy/pi/systemd/service-health-monitor-backup.timer
+
+The timer runs at 03:15 in the Raspberry Pi's local timezone.
+
+It invokes the existing SQLite online backup implementation
+inside the running worker container and keeps three local copies.
+
+A failed backup returns a nonzero exit status and is visible
+through the systemd journal.
+
+The timer does not require changes to Docker's configuration,
+the Raspberry Pi boot parameters or unrelated containers.
+
+### macOS
+
+The Mac retrieves the latest available Pi backup with:
+
+    scripts/pull-latest-pi-backup.sh
+
+The script requires:
+
+- An SSH host alias named healthmon-backup-pi
+- Non-interactive SSH key authentication
+- A working Python virtual environment in the repository
+- The existing pull-pi-backup.sh transfer script
+
+The LaunchAgent installer is:
+
+    scripts/install-mac-backup-agent.py
+
+The installer creates a user-level LaunchAgent scheduled every
+six hours with RunAtLoad enabled.
+
+The Mac scheduler is independent of the Pi's daily timer.
+
+If the Mac is offline, the Pi continues creating backups.
+The Mac can fetch the latest retained backup when it reconnects.
+
+### Limitations
+
+- Three local backup copies are retained on the Pi.
+- Local backups share the Pi's SD-card failure domain.
+- Off-device copies are not automatically pruned.
+- If the Mac is offline longer than local retention covers,
+  some historical backup snapshots may never be exported.
+- SSH key authentication is required for unattended exports.
+- Scheduling does not replace a full disaster-recovery test.
+- The monitoring host's existing power instability remains
+  an operational risk.
+
+The scheduling configurations must be validated and explicitly
+enabled after the corresponding GitHub changes are merged.

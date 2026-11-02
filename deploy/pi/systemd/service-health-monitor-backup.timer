@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Service Health Monitor SQLite Backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+AccuracySec=1min
+Unit=service-health-monitor-backup.service
+
+[Install]
+WantedBy=timers.target

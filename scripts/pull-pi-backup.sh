@@ -10,6 +10,16 @@ HOST="$1"
 NAME="$2"
 DEST_DIR="$3"
 
+SSH_BATCH_MODE="${HEALTHMON_SSH_BATCH:-no}"
+
+case "$SSH_BATCH_MODE" in
+  yes|no) ;;
+  *)
+    echo "Invalid SSH batch mode" >&2
+    exit 2
+    ;;
+esac
+
 # Reject unexpected filenames before constructing remote commands.
 if [[ ! "$NAME" =~ ^healthmon-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}\.db$ ]]; then
   echo "Invalid backup filename" >&2
@@ -30,7 +40,7 @@ REMOTE_FILE="/var/lib/service-health-monitor/backups/$NAME"
 echo "Reading remote backup checksum..."
 
 REMOTE_OUTPUT="$(
-  ssh "$HOST" "$REMOTE_CMD sha256sum '$REMOTE_FILE'"
+  ssh -o "BatchMode=$SSH_BATCH_MODE" -o ConnectTimeout=10 "$HOST" "$REMOTE_CMD sha256sum '$REMOTE_FILE'"
 )"
 REMOTE_SHA="${REMOTE_OUTPUT%% *}"
 
@@ -41,7 +51,7 @@ fi
 
 echo "Transferring backup through SSH..."
 
-ssh "$HOST" "$REMOTE_CMD cat '$REMOTE_FILE'" > "$TEMP"
+ssh -o "BatchMode=$SSH_BATCH_MODE" -o ConnectTimeout=10 "$HOST" "$REMOTE_CMD cat '$REMOTE_FILE'" > "$TEMP"
 
 LOCAL_SHA="$(shasum -a 256 "$TEMP" | awk '{print $1}')"
 
