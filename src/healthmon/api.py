@@ -72,7 +72,6 @@ def monitor_dict(row: sqlite3.Row) -> dict:
     }
 
 
-
 def latest_monitors() -> list[dict]:
     """Return latest results, excluding archived monitors."""
     path = database_path()
@@ -100,11 +99,7 @@ def latest_monitors() -> list[dict]:
                     )
                 }
 
-                rows = [
-                    row
-                    for row in rows
-                    if row["target_id"] in visible_ids
-                ]
+                rows = [row for row in rows if row["target_id"] in visible_ids]
 
     except (sqlite3.Error, OSError) as exc:
         raise HTTPException(

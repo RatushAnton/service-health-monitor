@@ -20,8 +20,10 @@ targets:
     host: example.com
 """
 
-def auth(token):
-    return {"Authorization:": f"Bearer {token}"}
+
+def auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
 
 def demo_tcp():
     return {
@@ -31,6 +33,7 @@ def demo_tcp():
         "host": "127.0.0.1",
         "port": 443,
     }
+
 
 def test_create_tcp_monitor(admin_client):
     client, token, db = admin_client
@@ -43,13 +46,7 @@ def test_create_tcp_monitor(admin_client):
 
     assert response.status_code == 201
     assert response.json()["enabled"] is True
-    assert "new_tcp" in {
-        target["id"]
-        for target in read_registry_config(
-            db if hasattr(db, "is_file") else
-            __import__("os").environ["HEALTHMON_DB_PATH"]
-        )["targets"]
-    }
+    assert "new_tcp" in {target["id"] for target in read_registry_config(db)["targets"]}
 
 
 def test_duplicate_id_returns_409(admin_client):
@@ -163,8 +160,8 @@ def test_disable_and_reenable(admin_client):
 
 def test_archive_keeps_history(admin_client, monkeypatch):
     client, token, _ = admin_client
-    from pathlib import Path
     import os
+    from pathlib import Path
 
     db_path = Path(os.environ["HEALTHMON_DB_PATH"])
 
@@ -192,6 +189,7 @@ def test_archive_keeps_history(admin_client, monkeypatch):
     assert len(get_history(db_path, "example_dns")) == 1
 
     from fastapi.testclient import TestClient
+
     from healthmon.api import app as read_only_app
 
     with TestClient(read_only_app) as read_client:
@@ -204,10 +202,13 @@ def test_archive_keeps_history(admin_client, monkeypatch):
 def test_archived_id_cannot_be_reused(admin_client):
     client, token, _ = admin_client
 
-    assert client.delete(
-        "/api/admin/monitors/example_dns",
-        headers=auth(token),
-    ).status_code == 204
+    assert (
+        client.delete(
+            "/api/admin/monitors/example_dns",
+            headers=auth(token),
+        ).status_code
+        == 204
+    )
 
     response = client.post(
         "/api/admin/monitors",
@@ -221,6 +222,7 @@ def test_archived_id_cannot_be_reused(admin_client):
     )
 
     assert response.status_code == 409
+
 
 @pytest.fixture
 def admin_client(tmp_path, monkeypatch):
@@ -241,7 +243,7 @@ def admin_client(tmp_path, monkeypatch):
     )
 
     with TestClient(app) as client:
-        yield client, token, token_file
+        yield client, token, db
 
 
 def test_missing_authorization_returns_401(admin_client):

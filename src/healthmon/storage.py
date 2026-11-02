@@ -108,10 +108,7 @@ def init_db(db_path: str | Path) -> None:
         # New registry tables
         connection.execute(CREATE_MONITOR_REGISTRY_SQL)
         registry_columns = {
-            row[1]
-            for row in connection.execute(
-                "PRAGMA table_info(monitor_registry)"
-            )
+            row[1] for row in connection.execute("PRAGMA table_info(monitor_registry)")
         }
         if "archived_at" not in registry_columns:
             connection.execute(

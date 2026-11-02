@@ -1,4 +1,3 @@
-
 """Strict request models for monitor administration."""
 
 import ipaddress
@@ -74,15 +73,11 @@ class MonitorInput(BaseModel):
                 try:
                     ipaddress.ip_address(self.resolver)
                 except ValueError as exc:
-                    raise ValueError(
-                        "DNS resolver must be an IP address"
-                    ) from exc
+                    raise ValueError("DNS resolver must be an IP address") from exc
 
         elif self.type == "tcp":
             if self.host is None or self.port is None:
-                raise ValueError(
-                    "TCP monitors require host and port"
-                )
+                raise ValueError("TCP monitors require host and port")
 
             if any(
                 value is not None

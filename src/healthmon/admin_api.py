@@ -11,12 +11,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from healthmon.monitor_models import EnabledInput, MonitorInput
 from healthmon.registry import (
-    list_registry_monitors,
     MonitorConflict,
     MonitorNotFound,
     RegistryNotInitialized,
     archive_monitor,
     create_monitor,
+    list_registry_monitors,
     set_monitor_enabled,
     update_monitor,
 )

@@ -14,8 +14,10 @@ from healthmon.storage import init_db
 class RegistryNotInitialized(RuntimeError):
     """Raised when monitor settings have not been imported."""
 
+
 class MonitorNotFound(LookupError):
     """Monitor does not exist or has been archived."""
+
 
 class MonitorConflict(ValueError):
     """Monitor ID or immutable identity conflicts."""
@@ -175,9 +177,7 @@ def require_initialized(connection: sqlite3.Connection) -> None:
     ).fetchone()
 
     if initialized is None:
-        raise RegistryNotInitialized(
-            "Monitor registry has not been initialized"
-        )
+        raise RegistryNotInitialized("Monitor registry has not been initialized")
 
 
 def create_monitor(db_path: str | Path, target: dict) -> dict:
