@@ -5,7 +5,10 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from healthmon.storage import get_history, get_latest_results
 
@@ -16,6 +19,26 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
 )
+
+ASSET_ROOT = Path(__file__).resolve().parent
+
+templates = Jinja2Templates(directory=ASSET_ROOT / "templates")
+
+app.mount(
+    "/static",
+    StaticFiles(directory=ASSET_ROOT / "static"),
+    name="static",
+)
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard(request: Request):
+    """Serve the responsive monitoring dashboard."""
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={},
+    )
 
 
 def database_path() -> Path:

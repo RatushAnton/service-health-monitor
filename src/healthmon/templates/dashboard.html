@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+    <html lang="en">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta name="theme-color" content="#101827">
+            <title>
+                Service Health Monitor
+            </title>
+
+            <link rel="stylesheet" href="{{ url_for('static', path='/dashboard.css') }}">
+            <script defer src="{{ url_for('static', path='/dashboard.js') }}"></script>
+        </head>
+
+    <body>
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-icon">◈</span>
+                <div>
+                    <p class="eyebrow">
+                        SELF-HOSTED MONITORING
+                    </p>
+                    <h1>
+                        Service Health Monitor
+                    </h1>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <span id="updated" class="muted">
+                    Loading...
+                </span>
+                <button id="refresh" type="button">
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <main class="container">
+            <div id="error" class="error-banner" role="alert" hidden></div>
+
+            <section class="metrics" aria-label="Status overview">
+                <article class="metric">
+                    <p>
+                        Total monitors
+                    </p>
+                    <strong id="metric-total">—</strong>
+                </article>
+                <article class="metric">
+                    <p>
+                        Healthy
+                    </p>
+                    <strong id="metric-up" class="green">—</strong>
+                </article>
+                <article class="metric">
+                    <p>
+                        Down
+                    </p>
+                    <strong id="metric-down" class="red">—</strong>
+                </article>
+                <article class="metric">
+                    <p>
+                        Stale
+                    </p>
+                    <strong id="metric-stale" class="amber">—</strong>
+                </article>
+            </section>
+
+            <section class="panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>
+                            Monitored services
+                        </h2>
+                        <p class="muted">
+                            Latest checks and recent response latency
+                        </p>
+                    </div>
+                    <span class="pill">
+                        Auto-refresh: 30s
+                    </span>
+                </div>
+
+                <div id="monitors" class="monitor-grid">
+                    <p class="muted">
+                        Loading monitors...
+                    </p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>
+                            Recent incidents
+                        </h2>
+                        <p class="muted">
+                            Recorded DOWN and RECOVERED transitions
+                        </p>
+                    </div>
+                </div>
+
+                <div id="incidents" class="incident-list">
+                    <p class="muted">
+                        Loading incidents...
+                    </p>
+                </div>
+            </section>
+
+            <footer>
+                Service Health Monitor · Docker · FastAPI · SQLite
+            </footer>
+        </main>
+    </body>
+</html>
