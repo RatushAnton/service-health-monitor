@@ -1,0 +1,15 @@
+[Unit]
+Description=Service Health Monitor SQLite Backup
+Documentation=https://github.com/RatushAnton/service-health-monitor
+Wants=docker.service
+After=docker.service
+ConditionPathExists=/home/ratush/service-health-monitor-prod/compose.pi.yaml
+
+[Service]
+Type=oneshot
+User=ratush
+WorkingDirectory=/home/ratush/service-health-monitor-prod
+UMask=0077
+TimeoutStartSec=10min
+
+ExecStart=/usr/bin/docker compose -f compose.pi.yaml exec -T worker python -m healthmon.backup create --db /var/lib/service-health-monitor/health.db --out-dir /var/lib/service-health-monitor/backups --keep 3
