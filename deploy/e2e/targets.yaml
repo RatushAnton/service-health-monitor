@@ -1,0 +1,23 @@
+settings:
+  timeout_seconds: 3
+  failure_threshold: 2
+  recovery_threshold: 1
+
+targets:
+  - id: e2e_http
+    name: E2E HTTP Service
+    type: http
+    url: http://demo:8765/
+    expected_status: 200
+
+  - id: e2e_tcp
+    name: E2E TCP Service
+    type: tcp
+    host: demo
+    port: 8765
+
+  - id: e2e_dns
+    name: E2E Docker DNS
+    type: dns
+    host: demo
+    record_type: A

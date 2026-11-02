@@ -23,3 +23,5 @@ config/targets.yaml
 deploy/docker/targets.yaml
 
 /deploy/local/admin-token.txt
+
+/deploy/e2e/admin-token.txt

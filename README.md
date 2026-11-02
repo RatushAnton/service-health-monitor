@@ -7,7 +7,11 @@ availability through DNS, TCP, and HTTP/HTTPS checks.
 
 Built as a hands-on DevOps and infrastructure engineering portfolio project.
 
-**Current milestone: Phase 6 completed (automated testing and CI).**
+**Current milestone: Phase 7G.4D completed (isolated Docker end-to-end validation).**
+
+The Docker worker, read-only dashboard, authenticated administration interface, and SQLite registry have been validated together.
+
+See the [Docker E2E validation runbook](docs/e2e-validation.md) for setup instructions, test scenarios, and results.
 
 The CLI supports persistent monitoring, incident detection,
 historical reporting, and queued webhook notifications with retry
@@ -344,7 +348,7 @@ Run a specific test module:
 python -m pytest -v tests/test_storage.py
 ```
 
-The suite currently contains 26 test cases covering:
+The suite currently contains 94 test cases covering:
 
 - Incident detection, recovery, and threshold validation
 - SQLite persistence, schema migration, and transaction rollback
@@ -404,16 +408,17 @@ deployment.
 | 4C | Incident integration with CLI | Complete |
 | 5 | Notifications and recovery alerts | Complete |
 | 6 | Automated tests and GitHub Actions | Complete |
-| 7 | Raspberry Pi deployment with systemd | Planned |
-| 8 | End-to-end outage demo and documentation | Planned |
+| 7G.4 | SQLite registry and browser administration | Complete |
+| 7G.4D | Isolated Docker E2E lifecycle validation | Complete |
+| 7G.5 | Raspberry Pi Docker deployment | Planned |
+| 7H | Notification integration and hardening | Planned |
 
 ## Known limitations
 
-- Checks currently run only when manually invoked.
 - Notifications require a separate `healthmon notify` execution.
 - Webhook delivery is at-least-once, not exactly-once.
 - Expired leases can allow redelivery after worker crashes.
-- No automatic scheduling or Raspberry Pi deployment is configured.
+- Raspberry Pi deployment has not yet been completed.
 - Historical UP status may be stale.
 - Network errors do not always identify the underlying root cause.
 - Python versions outside the CI matrix are not automatically tested.
