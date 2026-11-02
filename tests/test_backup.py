@@ -265,3 +265,34 @@ def test_cli_restore_check(source_db: Path, tmp_path: Path):
     backup = create_backup(source_db, tmp_path / "backups")
 
     assert main(["restore-check", "--db", str(backup)]) == 0
+
+
+def test_restore_uses_backup_directory_for_scratch(
+    source_db: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Restore verification must not depend on Docker's small /tmp."""
+    from healthmon import backup as backup_module
+
+    folder = tmp_path / "backups"
+    backup = create_backup(source_db, folder)
+
+    original = backup_module.tempfile.TemporaryDirectory
+    scratch_dirs = []
+
+    def track_temporary_directory(*args, **kwargs):
+        scratch_dirs.append(Path(kwargs["dir"]))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        backup_module.tempfile,
+        "TemporaryDirectory",
+        track_temporary_directory,
+    )
+
+    counts = backup_module.verify_restore(backup)
+
+    assert counts["checks"] == 1
+    assert scratch_dirs == [folder]
+    assert not list(folder.glob("healthmon-restore-check-*"))

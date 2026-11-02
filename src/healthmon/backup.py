@@ -190,7 +190,10 @@ def verify_restore(backup_path: str | Path) -> dict[str, int]:
     # Reject corrupted or incomplete backups before restoration.
     verify_database(backup)
 
-    with tempfile.TemporaryDirectory(prefix="healthmon-restore-check-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="healthmon-restore-check-",
+        dir=backup.parent,
+    ) as directory:
         restored = Path(directory) / "restored.db"
         source_uri = backup.resolve().as_uri() + "?mode=ro"
 
