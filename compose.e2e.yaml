@@ -1,0 +1,126 @@
+
+name: service-health-monitor-e2e
+
+x-app: &app
+  image: service-health-monitor:e2e
+  read_only: true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=16m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  demo:
+    image: python:3.13-alpine
+    command:
+      - python
+      - -m
+      - http.server
+      - "8765"
+      - --bind
+      - 0.0.0.0
+      - --directory
+      - /site
+    volumes:
+      - ./deploy/e2e/site:/site:ro
+    restart: "no"
+
+  registry-init:
+    <<: *app
+    entrypoint:
+      - python
+      - -m
+      - healthmon.registry
+    command:
+      - --config
+      - /etc/healthmon/targets.yaml
+      - --db
+      - /var/lib/service-health-monitor/health.db
+    volumes:
+      - ./deploy/e2e/targets.yaml:/etc/healthmon/targets.yaml:ro
+      - e2e_data:/var/lib/service-health-monitor
+    restart: "no"
+
+  worker:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+      demo:
+        condition: service_started
+    entrypoint:
+      - python
+      - -m
+      - healthmon.worker
+    command:
+      - --source
+      - db
+      - --db
+      - /var/lib/service-health-monitor/health.db
+      - --interval
+      - "5"
+    volumes:
+      - e2e_data:/var/lib/service-health-monitor
+    init: true
+    restart: unless-stopped
+
+  web:
+    <<: *app
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - python
+      - -m
+      - uvicorn
+      - healthmon.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    environment:
+      HEALTHMON_DB_PATH: /var/lib/service-health-monitor/health.db
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - e2e_data:/var/lib/service-health-monitor:ro
+    init: true
+    restart: unless-stopped
+
+  admin:
+    <<: *app
+    depends_on:
+      registry-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - python
+      - -m
+      - uvicorn
+      - healthmon.admin_api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+    environment:
+      HEALTHMON_DB_PATH: /var/lib/service-health-monitor/health.db
+      HEALTHMON_ADMIN_TOKEN_FILE: /run/secrets/healthmon_admin_token
+    ports:
+      - "127.0.0.1:18081:8081"
+    secrets:
+      - healthmon_admin_token
+    volumes:
+      - e2e_data:/var/lib/service-health-monitor
+    init: true
+    restart: unless-stopped
+
+secrets:
+  healthmon_admin_token:
+    file: ./deploy/e2e/admin-token.txt
+
+volumes:
+  e2e_data:
