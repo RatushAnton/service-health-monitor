@@ -42,10 +42,10 @@ jobs:
         run: python -m compileall -q src tests
 
       - name: Ruff lint
-        run: ruff check src/healthmon tests
+        run: ruff check src/healthmon tests scripts/install-mac-backup-agent.py
 
       - name: Ruff formatting
-        run: ruff format --check src/healthmon tests
+        run: ruff format --check src/healthmon tests scripts/install-mac-backup-agent.py
 
       - name: Run automated tests
         run: python -m pytest -v
