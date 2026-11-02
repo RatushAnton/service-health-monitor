@@ -78,11 +78,10 @@ jobs:
         run: |
           docker run --rm service-health-monitor:local --help
           docker run --rm --entrypoint python service-health-monitor:local -m healthmon.worker --help
-      
+
       - name: Verify packaged dashboard assets
         run: |
           docker run --rm \
             --entrypoint python \
             service-health-monitor:local \
             -c 'from importlib.resources import files; p = files("healthmon"); assert all((p / x).is_file() for x in ("templates/dashboard.html", "static/dashboard.css", "static/dashboard.js"))'
-
