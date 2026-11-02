@@ -34,6 +34,12 @@
     {% if changed %}
       <p class="success" role="status">Updated monitoring state for {{ changed }}.</p>
     {% endif %}
+    {% if archived %}
+      <p class="success" role="status">
+        Archived monitor {{ archived }}.
+        Historical checks and incidents were retained.
+      </p>
+    {% endif %}
 
     <p class="muted">
       Manage DNS, TCP and HTTP targets. Changes take effect on the
@@ -87,6 +93,9 @@
                     {% endif %}
                   </button>
                 </form>
+                <a class="edit-link" href="/admin/monitors/{{ monitor.id | urlencode }}/archive">
+                  Archive
+                </a>
               </div>
             </td>
           </tr>

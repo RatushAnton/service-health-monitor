@@ -21,6 +21,7 @@ from healthmon.registry import (
     MonitorConflict,
     MonitorNotFound,
     RegistryNotInitialized,
+    archive_monitor,
     create_monitor,
     list_registry_monitors,
     set_monitor_enabled,
@@ -266,6 +267,7 @@ def monitor_list(request: Request):
         updated=request.query_params.get("updated", ""),
         created=request.query_params.get("created", ""),
         changed=request.query_params.get("changed", ""),
+        archived=request.query_params.get("archived", ""),
     )
 
 
@@ -493,3 +495,62 @@ async def change_enabled_form(request: Request, target_id: str):
         ) from exc
 
     return redirect("/admin/monitors?changed=" + quote(target_id, safe=""))
+
+
+@router.get(
+    "/admin/monitors/{target_id}/archive",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def archive_page(request: Request, target_id: str):
+    session_id = active_session(request)
+    if session_id is None:
+        return redirect("/admin/login")
+
+    return render(
+        request,
+        "admin_archive.html",
+        monitor=find_monitor(target_id),
+        csrf_token=csrf_for(session_id),
+        error=None,
+    )
+
+
+@router.post(
+    "/admin/monitors/{target_id}/archive",
+    include_in_schema=False,
+)
+async def archive_monitor_form(request: Request, target_id: str):
+    same_origin_required(request)
+
+    session_id = active_session(request)
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Login required")
+
+    fields = await form_fields(request)
+    csrf_required(request, session_id, fields.get("csrf_token", ""))
+
+    if fields.get("confirm_id") != target_id:
+        return render(
+            request,
+            "admin_archive.html",
+            monitor=find_monitor(target_id),
+            csrf_token=csrf_for(session_id),
+            error="Enter the exact monitor ID to confirm archival.",
+            status_code=422,
+        )
+
+    try:
+        archive_monitor(db_path(), target_id)
+    except MonitorNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitor not found",
+        ) from exc
+    except (RegistryNotInitialized, sqlite3.Error, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot archive monitor",
+        ) from exc
+
+    return redirect("/admin/monitors?archived=" + quote(target_id, safe=""))
