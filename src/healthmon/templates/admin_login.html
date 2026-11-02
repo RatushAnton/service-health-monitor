@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Admin login · Service Health Monitor</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <main class="login-shell">
+    <div class="panel login-panel">
+      <p class="eyebrow">SERVICE HEALTH MONITOR</p>
+      <h1>Administration login</h1>
+      <p class="muted">Enter your existing administration token to establish a private browser session.</p>
+      {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+      <form method="post" action="/admin/login" autocomplete="off">
+        <label for="token">Administration token</label>
+        <input id="token" name="token" type="password" required autofocus autocomplete="off" spellcheck="false">
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+      <p class="footnote">Only use this page on localhost or through a trusted HTTPS connection.</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Edit {{ monitor.name }} · Service Health Monitor</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">SERVICE HEALTH MONITOR</p>
+      <h1>Edit monitor</h1>
+    </div>
+    <a class="secondary link-button" href="/admin/monitors">Back to monitors</a>
+  </header>
+  <main class="container form-container">
+    <div class="panel">
+      <p class="muted">Monitor ID <code>{{ monitor.id }}</code> · {{ monitor.type | upper }}</p>
+      <p class="muted">ID and monitor type are fixed to preserve history. Editing will reset the incident evaluation state, not past check results.</p>
+      {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+      <form method="post" action="/admin/monitors/{{ monitor.id | urlencode }}/edit">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="name">Display name</label>
+        <input id="name" name="name" value="{{ monitor.name }}" maxlength="100" required>
+        {% if monitor.type == 'dns' %}
+          <label for="host">DNS hostname</label>
+          <input id="host" name="host" value="{{ monitor.host }}" maxlength="253" required>
+          <label for="record_type">DNS record</label>
+          <select id="record_type" name="record_type">
+            <option value="A" {% if monitor.record_type | default('A') == 'A' %}selected{% endif %}>A</option>
+            <option value="AAAA" {% if monitor.record_type | default('A') == 'AAAA' %}selected{% endif %}>AAAA</option>
+          </select>
+          <label for="resolver">DNS resolver (optional)</label>
+          <input id="resolver" name="resolver" value="{{ monitor.resolver | default('') }}" placeholder="system or IP address">
+        {% elif monitor.type == 'tcp' %}
+          <label for="host">Hostname / IP</label>
+          <input id="host" name="host" value="{{ monitor.host }}" maxlength="253" required>
+          <label for="port">TCP port</label>
+          <input id="port" name="port" type="number" value="{{ monitor.port }}" min="1" max="65535" required>
+        {% elif monitor.type == 'http' %}
+          <label for="url">HTTP URL</label>
+          <input id="url" name="url" type="url" value="{{ monitor.url }}" maxlength="2048" required>
+          <label for="expected_status">Expected status</label>
+          <input id="expected_status" name="expected_status" type="number" value="{{ monitor.expected_status | default(200) }}" min="100" max="599" required>
+        {% endif %}
+        <div class="actions">
+          <button class="primary" type="submit">Save changes</button>
+          <a class="secondary link-button" href="/admin/monitors">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

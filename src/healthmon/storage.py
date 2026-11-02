@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS monitor_registry (
 );
 """
 
+CREATE_ADMIN_SESSIONS_SQL = """
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    session_hash TEXT PRIMARY KEY,
+    secret_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+"""
+
 CREATE_REGISTRY_SETTINGS_SQL = """
 CREATE TABLE IF NOT EXISTS registry_settings (
     singleton INTEGER PRIMARY KEY
@@ -115,6 +124,7 @@ def init_db(db_path: str | Path) -> None:
                 "ALTER TABLE monitor_registry ADD COLUMN archived_at TEXT"
             )
         connection.execute(CREATE_REGISTRY_SETTINGS_SQL)
+        connection.execute(CREATE_ADMIN_SESSIONS_SQL)
 
         # Upgrade databases created before retry scheduling existed.
         columns = {
