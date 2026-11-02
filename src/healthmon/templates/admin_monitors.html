@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,28 +19,90 @@
       <button class="secondary" type="submit">Sign out</button>
     </form>
   </header>
+
   <main class="container">
-    {% if updated %}<p class="success" role="status">Saved changes to {{ updated }}.</p>{% endif %}
-    <p class="muted">Edit DNS, TCP and HTTP targets. Changes take effect on the worker's next monitoring cycle.</p>
+    <p>
+      <a class="edit-link" href="/admin/monitors/new">+ Add monitor</a>
+    </p>
+
+    {% if updated %}
+      <p class="success" role="status">Saved changes to {{ updated }}.</p>
+    {% endif %}
+    {% if created %}
+      <p class="success" role="status">Created monitor {{ created }}.</p>
+    {% endif %}
+    {% if changed %}
+      <p class="success" role="status">Updated monitoring state for {{ changed }}.</p>
+    {% endif %}
+
+    <p class="muted">
+      Manage DNS, TCP and HTTP targets. Changes take effect on the
+      worker's next monitoring cycle.
+    </p>
+
     <div class="panel table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Target ID</th><th>Enabled</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Target ID</th>
+            <th>Enabled</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
         <tbody>
           {% for monitor in monitors %}
           <tr>
             <td><strong>{{ monitor.name }}</strong></td>
             <td>{{ monitor.type | upper }}</td>
             <td><code>{{ monitor.id }}</code></td>
-            <td>{% if monitor.enabled %}<span class="pill live">Enabled</span>{% else %}<span class="pill paused">Paused</span>{% endif %}</td>
-            <td><a class="edit-link" href="/admin/monitors/{{ monitor.id | urlencode }}/edit">Edit</a></td>
+            <td>
+              {% if monitor.enabled %}
+                <span class="pill live">Enabled</span>
+              {% else %}
+                <span class="pill paused">Paused</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="actions">
+                <a class="edit-link"
+                   href="/admin/monitors/{{ monitor.id | urlencode }}/edit">
+                  Edit
+                </a>
+
+                <form action="/admin/monitors/{{ monitor.id | urlencode }}/enabled"
+                      method="post">
+                  <input type="hidden" name="csrf_token"
+                         value="{{ csrf_token }}">
+                  <input type="hidden" name="enabled"
+                         value="{% if monitor.enabled %}0{% else %}1{% endif %}">
+
+                  <button class="secondary" type="submit">
+                    {% if monitor.enabled %}
+                      Pause
+                    {% else %}
+                      Resume
+                    {% endif %}
+                  </button>
+                </form>
+              </div>
+            </td>
           </tr>
           {% else %}
-          <tr><td colspan="5">No configured monitors.</td></tr>
+          <tr>
+            <td colspan="5">No configured monitors.</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="footnote">The existing /api/admin endpoints remain bearer-token authenticated. This page uses server-side sessions.</p>
+
+    <p class="footnote">
+      The existing /api/admin endpoints remain bearer-token authenticated.
+      This page uses server-side sessions.
+    </p>
   </main>
 </body>
 </html>

@@ -21,7 +21,9 @@ from healthmon.registry import (
     MonitorConflict,
     MonitorNotFound,
     RegistryNotInitialized,
+    create_monitor,
     list_registry_monitors,
+    set_monitor_enabled,
     update_monitor,
 )
 from healthmon.storage import init_db
@@ -262,6 +264,8 @@ def monitor_list(request: Request):
         monitors=configured_monitors(),
         csrf_token=csrf_for(session_id),
         updated=request.query_params.get("updated", ""),
+        created=request.query_params.get("created", ""),
+        changed=request.query_params.get("changed", ""),
     )
 
 
@@ -338,26 +342,154 @@ async def edit_monitor_form(request: Request, target_id: str):
     return redirect("/admin/monitors?updated=" + quote(target_id, safe=""))
 
 
-def test_login_origin_policy(browser):
-    client, bearer, _, _ = browser
+@router.get(
+    "/admin/monitors/new",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def new_monitor_page(request: Request):
+    session_id = active_session(request)
+    if session_id is None:
+        return redirect("/admin/login")
 
-    page = client.get("/admin/login")
-    assert page.headers["referrer-policy"] == "same-origin"
+    kind = request.query_params.get("type", "dns")
+    if kind not in ("dns", "tcp", "http"):
+        kind = "dns"
 
-    # Requests with opaque origins must remain blocked.
-    rejected = client.post(
-        "/admin/login",
-        data={"token": bearer},
-        headers={"Origin": "null"},
-        follow_redirects=False,
+    return render(
+        request,
+        "admin_new.html",
+        monitor={
+            "type": kind,
+            "record_type": "A",
+            "expected_status": 200,
+        },
+        csrf_token=csrf_for(session_id),
+        error=None,
     )
-    assert rejected.status_code == 403
 
-    # A legitimate same-origin form submission must succeed.
-    accepted = client.post(
-        "/admin/login",
-        data={"token": bearer},
-        headers={"Origin": str(client.base_url).rstrip("/")},
-        follow_redirects=False,
-    )
-    assert accepted.status_code == 303
+
+@router.post(
+    "/admin/monitors/new",
+    include_in_schema=False,
+)
+async def create_monitor_form(request: Request):
+    same_origin_required(request)
+
+    session_id = active_session(request)
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Login required")
+
+    fields = await form_fields(request)
+    csrf_required(request, session_id, fields.get("csrf_token", ""))
+
+    kind = fields.get("type", "")
+    draft = {
+        key: fields.get(key, "")
+        for key in (
+            "id",
+            "name",
+            "type",
+            "host",
+            "port",
+            "url",
+            "record_type",
+            "resolver",
+            "expected_status",
+        )
+    }
+
+    def validation_error(message: str, code: int = 422):
+        return render(
+            request,
+            "admin_new.html",
+            monitor=draft,
+            csrf_token=csrf_for(session_id),
+            error=message,
+            status_code=code,
+        )
+
+    payload = {
+        "id": fields.get("id", ""),
+        "name": fields.get("name", ""),
+        "type": kind,
+    }
+
+    try:
+        if kind == "dns":
+            payload["host"] = fields.get("host", "")
+            payload["record_type"] = fields.get("record_type", "A")
+
+            resolver = fields.get("resolver", "")
+            if resolver:
+                payload["resolver"] = resolver
+
+        elif kind == "tcp":
+            payload["host"] = fields.get("host", "")
+            payload["port"] = int(fields.get("port", ""))
+
+        elif kind == "http":
+            payload["url"] = fields.get("url", "")
+            payload["expected_status"] = int(fields.get("expected_status", "200"))
+
+        else:
+            raise ValueError("Unsupported monitor type")
+
+        normalized = MonitorInput.model_validate(payload).model_dump(exclude_none=True)
+
+    except (ValueError, ValidationError):
+        return validation_error(
+            "Invalid monitor configuration. Check the supplied fields."
+        )
+
+    try:
+        create_monitor(db_path(), normalized)
+    except MonitorConflict:
+        return validation_error(
+            "A monitor with this ID already exists.",
+            409,
+        )
+    except (RegistryNotInitialized, sqlite3.Error, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot create monitor",
+        ) from exc
+
+    return redirect("/admin/monitors?created=" + quote(normalized["id"], safe=""))
+
+
+@router.post(
+    "/admin/monitors/{target_id}/enabled",
+    include_in_schema=False,
+)
+async def change_enabled_form(request: Request, target_id: str):
+    same_origin_required(request)
+
+    session_id = active_session(request)
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="Login required")
+
+    fields = await form_fields(request)
+    csrf_required(request, session_id, fields.get("csrf_token", ""))
+
+    requested = fields.get("enabled")
+    if requested not in ("0", "1"):
+        raise HTTPException(
+            status_code=422,
+            detail="Enabled must be 0 or 1",
+        )
+
+    try:
+        set_monitor_enabled(db_path(), target_id, requested == "1")
+    except MonitorNotFound as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitor not found",
+        ) from exc
+    except (RegistryNotInitialized, sqlite3.Error, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot update monitor",
+        ) from exc
+
+    return redirect("/admin/monitors?changed=" + quote(target_id, safe=""))
