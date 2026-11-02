@@ -22,6 +22,24 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 """
 
+CREATE_MONITOR_REGISTRY_SQL = """
+CREATE TABLE IF NOT EXISTS monitor_registry (
+    target_id TEXT PRIMARY KEY,
+    target_json TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1
+        CHECK (enabled IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+"""
+
+CREATE_REGISTRY_SETTINGS_SQL = """
+CREATE TABLE IF NOT EXISTS registry_settings (
+    singleton INTEGER PRIMARY KEY
+        CHECK (singleton = 1),
+    settings_json TEXT NOT NULL
+);
+"""
+
 CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_checks_target_time
 ON checks (target_id, checked_at);
@@ -85,6 +103,10 @@ def init_db(db_path: str | Path) -> None:
         connection.execute(CREATE_INDEX_SQL)
         connection.execute(CREATE_TARGET_STATE_SQL)
         connection.execute(CREATE_INCIDENT_EVENTS_SQL)
+
+        # New registry tables
+        connection.execute(CREATE_MONITOR_REGISTRY_SQL)
+        connection.execute(CREATE_REGISTRY_SETTINGS_SQL)
 
         # Upgrade databases created before retry scheduling existed.
         columns = {
