@@ -1,0 +1,23 @@
+settings:
+  timeout_seconds: 3
+  failure_threshold: 3
+  recovery_threshold: 1
+
+targets:
+  - id: docker_dns
+    name: Docker DNS Test
+    type: dns
+    host: example.com
+    record_type: A
+
+  - id: docker_tcp
+    name: Docker TCP Test
+    type: tcp
+    host: 1.1.1.1
+    port: 443
+
+  - id: docker_http
+    name: Docker HTTP Test
+    type: http
+    url: https://example.com/
+    expected_status: 200
