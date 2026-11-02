@@ -144,6 +144,53 @@ services:
     init: true
     restart: unless-stopped
 
+  admin:
+    image: service-health-monitor:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    profiles:
+      - admin
+
+    entrypoint:
+      - python
+      - -m
+      - uvicorn
+      - healthmon.admin_api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+
+    environment:
+      HEALTHMON_DB_PATH: /var/lib/service-health-monitor/health.db
+      HEALTHMON_ADMIN_TOKEN_FILE: /run/secrets/healthmon_admin_token
+
+    ports:
+      - "127.0.0.1:8081:8081"
+
+    secrets:
+      - healthmon_admin_token
+
+    volumes:
+      - monitor_worker_data:/var/lib/service-health-monitor
+
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    init: true
+    restart: unless-stopped
+
+secrets:
+  healthmon_admin_token:
+    file: ./deploy/local/admin-token.txt
+
 volumes:
   monitor_test_data:
   monitor_worker_data:
