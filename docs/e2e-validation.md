@@ -1,10 +1,12 @@
 # Docker End-to-End Validation
 
-**Project:** Service Health Monitor  
-**Milestone:** Phase 7G.4D  
-**Validation date:** November 2, 2026  
-**Environment:** macOS, Docker Desktop, isolated Docker Compose stack  
-**Result:** PASS — 8 of 8 scenarios verified manually
+| Detail | Value |
+|---|---|
+| Project | Service Health Monitor |
+| Milestone | Phase 7G.4D |
+| Validation date | November 2, 2026 |
+| Environment | macOS, Docker Desktop, isolated Docker Compose stack |
+| Result | PASS — 8 of 8 scenarios manually verified |
 
 ## Objective
 
@@ -98,7 +100,7 @@ curl -sS -o /dev/null \
 
 Expected response code: `200`.
 
-Web dashboard: `http://127.0.0.1:18080/`  
+Web dashboard: `http://127.0.0.1:18080/`
 Administration: `http://127.0.0.1:18081/admin/login`
 
 ## Outage and recovery demonstration
