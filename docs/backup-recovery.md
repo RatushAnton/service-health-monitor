@@ -146,19 +146,19 @@ not a substitute for full production recovery testing.
 - Do not expose the admin HTTP interface publicly.
 - The Pi's existing undervoltage history remains a reliability risk.
 - Local retention is count-based, not a maximum disk-size limit.
-- Automated backup scheduling is not yet configured.
+- Scheduling definitions are prepared but not yet activated.
 - Off-device backups remain manual until scheduling is implemented.
 
 ## Verification
 
 Development verification completed on November 2, 2026:
 
-- Backup-specific tests: 14 passed
-- Full Python test suite: 108 passed
+- Backup-specific tests: 15 passed
+- Full Python test suite: 109 passed
 - Ruff lint and formatting: passed
 - Backup CLI: create, verify and restore-check available
 
-No Raspberry Pi deployment or restore operation was performed.
+Raspberry Pi deployment, manual SQLite backup, temporary restore verification, and off-device export to the Mac were validated on November 2, 2026. A full disaster-recovery cutover remains untested.
 
 ## Automated Backup Scheduling — Phase 7G.5E
 

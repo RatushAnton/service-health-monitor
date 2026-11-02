@@ -48,6 +48,7 @@ fi
 # The existing transfer script invokes 'python'.
 # Ensure it uses this project's virtual environment.
 export PATH="$ROOT/.venv/bin:$PATH"
+export HEALTHMON_SSH_BATCH=yes
 
 "$ROOT/scripts/pull-pi-backup.sh" \
   "$HOST" \
