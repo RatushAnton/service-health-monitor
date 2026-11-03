@@ -197,6 +197,7 @@ def send_notifications(
     limit: int,
     *,
     ntfy_url: str | None = None,
+    quiet_when_empty: bool = False,
 ) -> int:
     """Claim and deliver queued notifications safely."""
 
@@ -268,7 +269,8 @@ def send_notifications(
                 print(f"Database write error: {db_exc}")
                 return 3
 
-            print(f"Webhook delivery failed: event {event_id}")
+            channel = "ntfy" if ntfy_url is not None else "Webhook"
+            print(f"{channel} delivery failed: event {event_id}")
             print(f"  Reason: {exc}")
             print(f"  Attempt: {attempt}")
             print(f"  Next retry in: {delay} seconds")
@@ -288,7 +290,8 @@ def send_notifications(
         print(f"Delivered event {event_id}: {event['target_id']} {event['event_type']}")
 
     if delivered == 0:
-        print("No incident notifications ready for delivery")
+        if not quiet_when_empty:
+            print("No incident notifications ready for delivery")
     else:
         print(f"Notifications delivered: {delivered}")
 

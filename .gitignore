@@ -29,3 +29,5 @@ deploy/docker/targets.yaml
 # Raspberry Pi deployment
 /deploy/pi/targets.yaml
 /deploy/pi/admin-token.txt
+
+/deploy/pi/ntfy-url.txt
