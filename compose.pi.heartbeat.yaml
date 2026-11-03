@@ -1,0 +1,59 @@
+# Optional independent external heartbeat.
+# Requires compose.pi.yaml and explicit activation.
+
+services:
+  heartbeat:
+    image: service-health-monitor:heartbeat
+    profiles:
+      - heartbeat
+
+    user: "10001:10001"
+    read_only: true
+
+    entrypoint:
+      - python
+      - -m
+      - healthmon.heartbeat
+
+    command:
+      - --db
+      - /var/lib/service-health-monitor/health.db
+      - --ping-url-file
+      - /run/secrets/healthchecks_ping_url
+      - --interval
+      - "60"
+      - --max-age
+      - "600"
+
+    volumes:
+      - pi_data:/var/lib/service-health-monitor:ro
+
+    secrets:
+      - healthchecks_ping_url
+
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: "0.25"
+
+    init: true
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+secrets:
+  healthchecks_ping_url:
+    file: ./deploy/pi/healthchecks-url.txt
