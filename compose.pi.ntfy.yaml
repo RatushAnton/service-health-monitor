@@ -1,0 +1,54 @@
+# Optional ntfy notification service.
+# Must be used together with compose.pi.yaml.
+# Never enabled by the base production Compose file alone.
+
+services:
+  notifier:
+    image: service-health-monitor:ntfy
+    profiles:
+      - notifications
+
+    user: "10001:10001"
+    read_only: true
+
+    entrypoint:
+      - python
+      - -m
+      - healthmon.notifier
+
+    command:
+      - --db
+      - /var/lib/service-health-monitor/health.db
+      - --ntfy-url-file
+      - /run/secrets/healthmon_ntfy_url
+      - --interval
+      - "60"
+      - --limit
+      - "20"
+
+    volumes:
+      - pi_data:/var/lib/service-health-monitor
+
+    secrets:
+      - healthmon_ntfy_url
+
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: "0.25"
+
+    init: true
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+secrets:
+  healthmon_ntfy_url:
+    file: ./deploy/pi/ntfy-url.txt

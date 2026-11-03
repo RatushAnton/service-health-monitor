@@ -448,3 +448,20 @@ def test_notify_ntfy_rejects_insecure_topic(tmp_path, monkeypatch):
         )
         == 2
     )
+
+
+def test_notify_quiet_idle_suppresses_repetitive_logs(tmp_path, capsys):
+    """Background dispatch skips idle logs; CLI keeps its default."""
+    db = tmp_path / "health.db"
+    init_db(db)
+
+    result = cli.send_notifications(
+        str(db),
+        None,
+        20,
+        ntfy_url="https://ntfy.sh/test_private_topic",
+        quiet_when_empty=True,
+    )
+
+    assert result == 0
+    assert "No incident notifications ready" not in (capsys.readouterr().out)
