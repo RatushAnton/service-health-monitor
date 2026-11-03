@@ -28,6 +28,38 @@ Basic health checks are easy to run manually, but unreliable as an operational w
 
 The result is a working system—not just a CLI demonstration—with persistent incident processing, automated backups, and an **independent external dead-man's switch**. It works behind a dynamic public IP or CGNAT because all external communication is outbound HTTPS.
 
+## Screenshots
+
+The following screenshots were captured from the live Raspberry Pi 5 deployment.
+
+### Monitoring Dashboard
+
+Real-time visibility into the configured DNS, TCP and HTTP/HTTPS monitors, including service status and monitoring history.
+
+![Service Health Monitor Dashboard](docs/screenshots/dashboard.png)
+
+### Monitor Administration
+
+Authenticated administration interface for creating, editing, enabling and disabling monitors without restarting the monitoring worker.
+
+![Monitor Administration](docs/screenshots/admin.png)
+
+### Incident Notifications
+
+Mobile push notifications delivered through ntfy when monitored services transition to DOWN or RECOVERED.
+
+![DOWN and RECOVERED Notifications](docs/screenshots/notifications.png)
+
+### External Heartbeat Monitoring
+
+Healthchecks.io independently monitors the Raspberry Pi through outbound heartbeats and alerts when the monitoring system becomes unreachable.
+
+![External Heartbeat Monitoring](docs/screenshots/external-heartbeat.png)
+
+---
+
+
+
 ## Architecture
 
 ```mermaid
