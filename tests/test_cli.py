@@ -348,3 +348,103 @@ def test_check_invalid_configuration(
 
     assert code == 2
     assert "Configuration error:" in capsys.readouterr().out
+
+
+def test_notify_ntfy_success_marks_event_delivered(tmp_path, monkeypatch):
+    db = tmp_path / "health.db"
+    seed_down_event(db)
+
+    destination = tmp_path / "ntfy-url"
+    destination.write_text(
+        "https://ntfy.sh/test_private_topic\n",
+        encoding="utf-8",
+    )
+
+    sent = []
+
+    def fake_send(url, event):
+        sent.append((url, event["event_type"]))
+
+    monkeypatch.setattr(cli, "send_ntfy", fake_send)
+
+    args = (
+        "notify",
+        "--db",
+        db,
+        "--ntfy-url-file",
+        destination,
+    )
+
+    assert invoke(monkeypatch, *args) == 0
+    assert sent == [("https://ntfy.sh/test_private_topic", "DOWN")]
+
+    # Delivered events must not be sent again.
+    assert invoke(monkeypatch, *args) == 0
+    assert len(sent) == 1
+
+    with sqlite3.connect(db) as conn:
+        delivered = conn.execute(
+            "SELECT delivered_at FROM incident_events WHERE id = 1"
+        ).fetchone()[0]
+
+    assert delivered is not None
+
+
+def test_notify_ntfy_failure_schedules_retry(tmp_path, monkeypatch):
+    from healthmon.ntfy import NtfyDeliveryError
+
+    db = tmp_path / "health.db"
+    seed_down_event(db)
+
+    destination = tmp_path / "ntfy-url"
+    destination.write_text(
+        "https://ntfy.sh/test_private_topic\n",
+        encoding="utf-8",
+    )
+
+    def fake_failure(url, event):
+        raise NtfyDeliveryError("ntfy returned HTTP 503")
+
+    monkeypatch.setattr(cli, "send_ntfy", fake_failure)
+
+    args = (
+        "notify",
+        "--db",
+        db,
+        "--ntfy-url-file",
+        destination,
+    )
+
+    assert invoke(monkeypatch, *args) == 4
+
+    with sqlite3.connect(db) as conn:
+        attempts, delivered, retry_at = conn.execute(
+            """
+            SELECT delivery_attempts, delivered_at, next_attempt_at
+            FROM incident_events WHERE id = 1
+            """
+        ).fetchone()
+
+    assert attempts == 1
+    assert delivered is None
+    assert retry_at is not None
+
+
+def test_notify_ntfy_rejects_insecure_topic(tmp_path, monkeypatch):
+    destination = tmp_path / "ntfy-url"
+    destination.write_text(
+        "http://ntfy.sh/insecure_topic\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        invoke(
+            monkeypatch,
+            "notify",
+            "--db",
+            tmp_path / "missing.db",
+            "--ntfy-url-file",
+            destination,
+        )
+        == 2
+    )

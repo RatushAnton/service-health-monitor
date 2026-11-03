@@ -8,6 +8,7 @@ import httpx
 
 from healthmon.alerting import send_webhook
 from healthmon.config import ConfigError, load_config
+from healthmon.ntfy import NtfyDeliveryError, is_valid_ntfy_url, send_ntfy
 from healthmon.probes import check_dns, check_http, check_tcp
 from healthmon.storage import (
     claim_pending_event,
@@ -192,8 +193,10 @@ def show_history(
 
 def send_notifications(
     db_path: str,
-    webhook_url: str,
+    webhook_url: str | None,
     limit: int,
+    *,
+    ntfy_url: str | None = None,
 ) -> int:
     """Claim and deliver queued notifications safely."""
 
@@ -201,7 +204,15 @@ def send_notifications(
         print("Notification limit must be positive")
         return 2
 
-    if not webhook_url.startswith(("http://", "https://")):
+    if (webhook_url is None) == (ntfy_url is None):
+        print("Specify exactly one notification destination")
+        return 2
+
+    if ntfy_url is not None:
+        if not is_valid_ntfy_url(ntfy_url):
+            print("Invalid ntfy topic URL")
+            return 2
+    elif not webhook_url.startswith(("http://", "https://")):
         print("Webhook URL must use HTTP or HTTPS")
         return 2
 
@@ -233,9 +244,12 @@ def send_notifications(
         token = event["lease_token"]
 
         try:
-            send_webhook(webhook_url, event)
+            if ntfy_url is not None:
+                send_ntfy(ntfy_url, event)
+            else:
+                send_webhook(webhook_url, event)
 
-        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, NtfyDeliveryError) as exc:
             attempt = event["delivery_attempts"]
             delay = min(
                 60 * (2 ** min(attempt - 1, 6)),
@@ -356,10 +370,15 @@ def main() -> int:
         help="Path to the SQLite database",
     )
 
-    notify_parser.add_argument(
+    destination = notify_parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument(
         "--webhook-url",
-        required=True,
-        help="HTTP endpoint to receive incident notifications",
+        help="Generic HTTP webhook destination",
+    )
+    destination.add_argument(
+        "--ntfy-url-file",
+        type=Path,
+        help="Private file containing the HTTPS ntfy topic URL",
     )
 
     notify_parser.add_argument(
@@ -385,9 +404,18 @@ def main() -> int:
         )
 
     if args.command == "notify":
+        ntfy_url = None
+        if args.ntfy_url_file is not None:
+            try:
+                ntfy_url = args.ntfy_url_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                print("Cannot read ntfy URL file")
+                return 2
+
         return send_notifications(
             args.db,
             args.webhook_url,
             args.limit,
+            ntfy_url=ntfy_url,
         )
     return 2
