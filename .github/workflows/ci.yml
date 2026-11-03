@@ -79,6 +79,7 @@ jobs:
           docker run --rm service-health-monitor:local --help
           docker run --rm --entrypoint python service-health-monitor:local -m healthmon.worker --help
           docker run --rm --entrypoint python service-health-monitor:local -m healthmon.notifier --help
+          docker run --rm --entrypoint python service-health-monitor:local -m healthmon.heartbeat --help
 
       - name: Verify packaged dashboard assets
         run: |

@@ -31,3 +31,5 @@ deploy/docker/targets.yaml
 /deploy/pi/admin-token.txt
 
 /deploy/pi/ntfy-url.txt
+
+/deploy/pi/healthchecks-url.txt
