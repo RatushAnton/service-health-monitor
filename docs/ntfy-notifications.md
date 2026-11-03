@@ -1,74 +1,40 @@
 # ntfy Notification Dispatcher
 
-## Overview
+**Status: deployed and end-to-end verified (November 2026).** On Raspberry Pi 5, a controlled synthetic incident generated a `DOWN` and a `RECOVERED` event. Both events were dispatched on the first attempt and received on a phone.
 
-The notification dispatcher delivers DOWN and RECOVERED events
-from the Service Health Monitor SQLite incident queue.
+## Operation
+
+The dispatcher polls SQLite's persistent `incident_events` queue for delivery-eligible events.
 
 - Monitoring interval: 300 seconds
 - Notification polling interval: 60 seconds
-- Delivery batch limit: 20 events
-- Transport: ntfy HTTPS publishing API
-- Runtime: non-root Docker container, UID 10001
-- Deployment: optional Compose overlay
+- Maximum delivery batch: 20 events
+- Transport: ntfy HTTPS publish API
+- Container: non-root UID/GID `10001:10001`
+- Deployment: `compose.pi.ntfy.yaml`, optional `notifications` profile
 
-## Files
+## Implementation
 
-- src/healthmon/ntfy.py: ntfy publisher
-- src/healthmon/notifier.py: background dispatcher
-- compose.pi.ntfy.yaml: optional Compose service
-- deploy/pi/ntfy-url.txt: local secret, excluded from Git
+- `src/healthmon/ntfy.py`: validates the topic endpoint and publishes messages
+- `src/healthmon/notifier.py`: background dispatch loop
+- `src/healthmon/cli.py`: claim/send orchestration
+- `src/healthmon/storage.py`: durable queue, leases, retries and delivery timestamps
+- `deploy/pi/ntfy-url.txt`: private topic URL, excluded from Git
 
-## Configuration
-
-The notifier reads a complete HTTPS ntfy topic URL from a
-private file.
-
-Never commit the topic URL or include it in CLI arguments.
-
-The public ntfy.sh service supports unguessable topic names,
-but an unprotected topic is not access-controlled. Avoid
-including sensitive information in notifications.
-
-## Safety before enabling
-
-The existing SQLite database may contain historical,
-undelivered incident events.
-
-Inspect the pending queue before starting the dispatcher.
-Starting the notifier, including with --once, can send
-those events immediately.
-
-Do not clear historical events without reviewing them.
-Preserve the SQLite backup and incident history.
-
-## Deployment requirements
-
-- Build the notifier image from the reviewed source.
-- Ensure the ntfy secret is readable by container UID 10001.
-- Use compose.pi.yaml together with compose.pi.ntfy.yaml.
-- Enable the notifications profile explicitly.
-- Do not replace the existing production monitoring image.
-- Do not modify unrelated Docker containers or volumes.
-- Never use docker compose down -v or docker system prune.
+The complete topic URL is read from a private file, not supplied on the command line. On public ntfy.sh, unprotected topics depend on unpredictable names for privacy; never include sensitive information in alerts.
 
 ## Reliability
 
-Notifications use the existing SQLite delivery queue.
+Incident transitions are stored in SQLite before delivery. The notifier claims events with an expiring lease, retries failures with exponential backoff, and marks successful sends as delivered. It can resume processing after a restart. Delivery is **at-least-once**, not exactly-once: crashes at certain boundaries may result in duplicate messages.
 
-- Successful sends are marked delivered.
-- Failed sends are scheduled for retry.
-- Delivery claims use leases.
-- Restarting the dispatcher resumes pending work.
-- Delivery is at-least-once, not exactly-once; duplicate
-  notifications are possible after certain failures.
+Before enabling the dispatcher against an existing database, examine pending historical events to avoid unexpected old notifications. Never delete incident history merely to clear a queue.
 
-## Limitations
+## External host monitoring
 
-This notifier runs on the monitored Raspberry Pi.
+A Pi-hosted notifier cannot alert about a complete Pi power or connectivity failure. This gap is addressed by the [independent external heartbeat](external-heartbeat.md), which was deployed and verified using a controlled stop/restart test. Healthchecks.io sent both the outage and recovery notifications to the phone.
 
-A complete Pi outage, loss of power or loss of connectivity
-can prevent notifications from being delivered.
+The heartbeat verifies fresh worker activity, **not** whether the notifier itself is running. Both external services remain dependencies.
 
-An external heartbeat monitor is required to detect a
-complete monitoring-host outage.
+## Safety
+
+Keep credentials private, preserve the named SQLite volume, and avoid broad Docker cleanup or service restarts during routine diagnostics. See [Raspberry Pi deployment](pi-deployment.md).
