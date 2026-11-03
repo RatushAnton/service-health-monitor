@@ -1,189 +1,97 @@
-# Raspberry Pi Docker Deployment
+# Raspberry Pi 5 Docker deployment
 
-## Status
+**Status: deployed and verified (November 2026).** This project runs on a Raspberry Pi 5 using Docker Compose project `service-health-monitor-pi`.
 
-Phase 7G.5B: deployment configuration prepared.
+## Deployed services
 
-This document describes the deployment procedure. It does not
-indicate that a Raspberry Pi deployment has been completed.
+| Service | Purpose |
+| --- | --- |
+| `worker` | DNS, TCP and HTTP/HTTPS checks every 300 seconds |
+| `web` | Read-only dashboard at `127.0.0.1:18080` |
+| `admin` | Authenticated administration at `127.0.0.1:18081` |
+| `notifier` | ntfy event dispatcher every 60 seconds |
+| `heartbeat` | External Healthchecks.io ping every 60 seconds, conditional on fresh checks |
 
-## Architecture
+An additional one-shot service, `registry-init`, imports the initial YAML targets into SQLite. The SQLite data is stored in the dedicated `pi_data` Docker volume at `/var/lib/service-health-monitor/health.db`. All application images run as UID/GID `10001:10001`.
 
-- Host: Raspberry Pi 5 running 64-bit Linux
-- Runtime: Docker Engine and Docker Compose
-- Compose file: compose.pi.yaml
-- Project: service-health-monitor-pi
-- Image: service-health-monitor:pi
-- Database: dedicated pi_data Docker volume
-- Worker interval: 300 seconds
-- Web: 127.0.0.1:18080
-- Admin: 127.0.0.1:18081
-- Container user: UID 10001
+Six home-network targets are enabled. Three demonstration targets remain disabled. Both local incident notifications and external heartbeat outage/recovery notifications were received on a phone during controlled end-to-end tests.
 
-The worker, web API, admin interface and registry initializer
-share a dedicated database volume.
+## Compose files
 
-This deployment must not reuse the existing test database or
-alter unrelated Docker containers.
+- `compose.pi.yaml`: worker, web, admin and registry initialization
+- `compose.pi.ntfy.yaml`: opt-in `notifications` profile
+- `compose.pi.heartbeat.yaml`: opt-in `heartbeat` profile
 
-## Safety requirements
+## First-time preparation
 
-- Do not remove or modify existing Docker volumes.
-- Do not run docker system prune.
-- Do not use docker compose down -v.
-- Do not expose the admin interface on 0.0.0.0.
-- Keep credentials out of Git.
-- Use the SD card only as an initial home-lab storage target.
-- Confirm backup and restore procedures before relying on
-  the service for important monitoring.
+**The existing Pi installation is already configured.** These instructions apply to a new installation and must not be rerun blindly against the working deployment.
 
-## First-time host preparation
+```bash
+git clone https://github.com/RatushAnton/service-health-monitor.git ~/service-health-monitor-prod
+cd ~/service-health-monitor-prod
+cp deploy/pi/targets.example.yaml deploy/pi/targets.yaml
+umask 077
+openssl rand -hex 32 > deploy/pi/admin-token.txt
+sudo chown 10001:10001 deploy/pi/admin-token.txt
+sudo chmod 0400 deploy/pi/admin-token.txt
+```
 
-These steps are for the deployment phase, not Mac-side setup.
+Review the target YAML before starting the initial stack. The registry initializer imports YAML **once**; subsequent changes are made through the admin API. Set up notification and heartbeat secrets using their separate runbooks. No secret values should be committed or pasted into logs.
 
-Clone into a new directory without changing older checkouts:
+## Safe operational checks
 
-    git clone https://github.com/RatushAnton/service-health-monitor.git \
-      ~/service-health-monitor-prod
+From the Pi's deployment directory:
 
-    cd ~/service-health-monitor-prod
+```bash
+docker compose \
+  -f compose.pi.yaml \
+  -f compose.pi.ntfy.yaml \
+  -f compose.pi.heartbeat.yaml \
+  --profile notifications \
+  --profile heartbeat ps
+```
 
-Prepare the initial registry configuration:
+Inspect logs without restarting services:
 
-    cp deploy/pi/targets.example.yaml deploy/pi/targets.yaml
+```bash
+docker compose \
+  -f compose.pi.yaml \
+  -f compose.pi.ntfy.yaml \
+  -f compose.pi.heartbeat.yaml \
+  logs --tail 30 worker notifier heartbeat
+```
 
-Review targets.yaml before starting monitoring.
+Verify the local read-only API:
 
-The registry bootstrap imports YAML only on first initialization.
-Afterward, monitor changes are managed through the admin UI/API.
-Restarting the registry initializer does not re-import the YAML.
+```bash
+curl -fsS http://127.0.0.1:18080/api/health
+curl -fsS http://127.0.0.1:18080/api/monitors
+```
 
-## Administration secret
+## Private UI access
 
-Generate a unique token directly on the Raspberry Pi:
+From a Mac, use an SSH tunnel and substitute the Pi's reachable SSH address:
 
-    umask 077
-    openssl rand -hex 32 > deploy/pi/admin-token.txt
+```bash
+ssh -N \
+  -L 28080:127.0.0.1:18080 \
+  -L 28081:127.0.0.1:18081 \
+  USER@PI_HOST
+```
 
-The container runs as UID 10001. On Linux, file-backed Docker
-Compose secrets preserve host file ownership and permissions.
+Open `http://127.0.0.1:28080/` for the dashboard and `http://127.0.0.1:28081/admin/login` for administration. Do not expose the interfaces on public inbound ports.
 
-Grant only the container UID access:
+## Backups and external alerts
 
-    sudo chown 10001:10001 deploy/pi/admin-token.txt
-    sudo chmod 0400 deploy/pi/admin-token.txt
+The Pi's daily systemd backup timer runs at **03:15 local time**, retaining three local snapshots. An independent macOS launchd job attempts an off-device SSH export every six hours. Backups use SQLite online snapshots, integrity checks, temporary restore validation and SHA-256 transfer verification. See [Backup and recovery](backup-recovery.md).
 
-Verify metadata without displaying the token:
+The [ntfy dispatcher](ntfy-notifications.md) handles persisted DOWN/RECOVERED incident events. The [external heartbeat](external-heartbeat.md) detects complete Pi/connectivity outages or stale monitoring activity without any static public IP or router port forwarding.
 
-    stat -c '%u:%g %a %n' deploy/pi/admin-token.txt
+## Safety and limitations
 
-Expected owner: 10001:10001
-Expected permissions: 400
-
-Do not paste or commit the credential.
-
-## Build and deploy
-
-First validate the Compose configuration:
-
-    docker compose -f compose.pi.yaml config --quiet
-
-Build the application image once:
-
-    docker compose -f compose.pi.yaml build worker
-
-Start the isolated application stack:
-
-    docker compose -f compose.pi.yaml up -d --no-build
-
-Inspect its status:
-
-    docker compose -f compose.pi.yaml ps
-
-    docker compose -f compose.pi.yaml logs --tail 50 \
-      registry-init worker web admin
-
-The registry initializer should exit successfully.
-The other three application services should remain running.
-
-## Local verification on the Pi
-
-    curl -fsS http://127.0.0.1:18080/api/health
-
-    curl -fsS http://127.0.0.1:18080/api/monitors
-
-    curl -sS -o /dev/null -w 'HTTP %{http_code}\n' \
-      http://127.0.0.1:18081/admin/login
-
-The dashboard may initially have no recorded checks until
-the worker completes its first cycle.
-
-## Access from a Mac
-
-Create an SSH tunnel from the Mac:
-
-    ssh -N \
-      -L 28080:127.0.0.1:18080 \
-      -L 28081:127.0.0.1:18081 \
-      ratush@PI_HOST
-
-Replace PI_HOST with the Raspberry Pi's reachable hostname
-or IP address.
-
-Open these URLs on the Mac:
-
-Dashboard: http://127.0.0.1:28080/
-Admin: http://127.0.0.1:28081/admin/login
-
-The tunnel transports these HTTP connections over SSH.
-No additional LAN-facing ports are required on the Pi.
-
-## Operational commands
-
-Status:
-
-    docker compose -f compose.pi.yaml ps
-
-Worker logs:
-
-    docker compose -f compose.pi.yaml logs --tail 100 worker
-
-Stop only the new monitoring stack:
-
-    docker compose -f compose.pi.yaml down
-
-The last command preserves the named SQLite data volume.
-It must not be combined with -v.
-
-## Persistence and backups
-
-The monitoring database is stored in the named pi_data volume.
-
-The `healthmon.backup` module provides consistent SQLite
-snapshots, integrity verification, retention and temporary
-restore checks.
-
-Local backups are initially stored inside the dedicated Pi
-data volume. Verified copies should be exported to the Mac.
-
-See [Backup and Recovery](backup-recovery.md) for the manual
-procedures and off-device transfer script.
-
-Automated scheduling and full production recovery testing
-remain pending.
-
-## Initial deployment limitations
-
-This is a home-lab deployment, not a highly available service.
-
-Resource limits are initial safeguards rather than measured
-production requirements. Review them after observing actual
-memory and CPU consumption.
-
-Reliable power and persistent storage are prerequisites
-for a production-grade installation.
-
-## Next milestone
-
-Phase 7G.5C will implement SQLite backups, retention,
-restore verification and operational hardening.
+- Never run `docker compose down -v` or `docker system prune`; preserve the data volume and unrelated Pi services.
+- Prefer explicit per-service operations over recreating the full Compose stack.
+- Do not share private hostnames, admin credentials, ntfy topics or Healthchecks Ping URLs.
+- Docker reported that the Pi's kernel/cgroup configuration does **not enforce the configured memory limit**; containers nonetheless started successfully.
+- This is a single-host home-lab deployment, not a high-availability setup.
+- Backup integrity and temporary restore checks were validated, but a **full live-service disaster-recovery cutover** has not yet been tested.
